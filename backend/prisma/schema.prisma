@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum MaterialType {
+  QUESTION_BANK
+  SHORT_NOTE
+  FULL_BOOK
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELED
+  PENDING
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+enum VerificationPurpose {
+  REGISTER
+  LOGIN
+}
+
+model Company {
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String
+  slug         String        @unique
+  universities University[]
+  students     Student[]
+  materials    StudyMaterial[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model University {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @db.Uuid
+  name      String
+  slug      String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  courses   Course[]
+  materials StudyMaterial[]
+  createdAt DateTime @default(now())
+  @@unique([companyId, slug])
+  @@index([companyId])
+}
+
+model Course {
+  id           String         @id @default(uuid()) @db.Uuid
+  universityId String         @db.Uuid
+  title        String
+  slug         String
+  university   University     @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  materials    StudyMaterial[]
+  createdAt    DateTime       @default(now())
+  @@unique([universityId, slug])
+  @@index([universityId])
+}
+
+model StudyMaterial {
+  id           String       @id @default(uuid()) @db.Uuid
+  companyId    String       @db.Uuid
+  universityId String       @db.Uuid
+  courseId     String       @db.Uuid
+  title        String
+  type         MaterialType
+  isPublished  Boolean      @default(false)
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  university   University   @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  course       Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  chunks       StudyChunk[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  @@index([companyId, universityId, courseId, isPublished])
+}
+
+model StudyChunk {
+  id         String        @id @default(uuid()) @db.Uuid
+  materialId String        @db.Uuid
+  content    String        @db.Text
+  pageNumber Int?
+  material   StudyMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  createdAt  DateTime      @default(now())
+  @@index([materialId])
+}
+
+model Student {
+  id             String         @id @default(uuid()) @db.Uuid
+  companyId      String         @db.Uuid
+  phone          String
+  displayName    String?
+  isPhoneVerified Boolean        @default(false)
+  passwordHash   String?
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  subscriptions  Subscription[]
+  chatSessions   ChatSession[]
+  createdAt      DateTime       @default(now())
+  @@unique([companyId, phone])
+  @@index([companyId])
+}
+
+model PhoneVerificationChallenge {
+  id          String              @id @default(uuid()) @db.Uuid
+  companyId   String              @db.Uuid
+  phone       String
+  codeHash    String
+  purpose     VerificationPurpose
+  displayName String?
+  passwordHash String?
+  expiresAt   DateTime
+  attempts    Int                 @default(0)
+  consumedAt  DateTime?
+  createdAt   DateTime            @default(now())
+  @@index([companyId, phone, createdAt])
+  @@index([expiresAt])
+}
+
+model Subscription {
+  id        String             @id @default(uuid()) @db.Uuid
+  studentId String             @db.Uuid
+  status    SubscriptionStatus @default(PENDING)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  provider  String?
+  student   Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime           @default(now())
+  @@index([studentId, status, endsAt])
+}
+
+model ChatSession {
+  id          String        @id @default(uuid()) @db.Uuid
+  studentId   String        @db.Uuid
+  universityId String       @db.Uuid
+  courseId    String        @db.Uuid
+  title       String?
+  student     Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  messages    ChatMessage[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  @@index([studentId, createdAt])
+}
+
+model ChatMessage {
+  id        String      @id @default(uuid()) @db.Uuid
+  sessionId String      @db.Uuid
+  role      MessageRole
+  content   String      @db.Text
+  sources   Json?
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+  @@index([sessionId, createdAt])
+}
