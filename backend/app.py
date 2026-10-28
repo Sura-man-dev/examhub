@@ -103,6 +103,12 @@ def create_app():
     def fail(message, status):
         return jsonify(error=message), status
 
+    def chapa_private_key():
+        # Chapa calls this the secret key in its API docs; accept the dashboard's
+        # private-key env name too, without ever sending either key to the client.
+        return (os.getenv('CHAPA_PRIVATE_KEY', '').strip()
+                or os.getenv('CHAPA_SECRET_KEY', '').strip())
+
     def slugify(value):
         normalized = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode().lower()
         return re.sub(r'-+', '-', re.sub(r'[^a-z0-9]+', '-', normalized)).strip('-')
@@ -219,7 +225,9 @@ def create_app():
             amount = Decimal('0')
             valid_amount = False
         environment = os.getenv('CHAPA_ENV', 'test').strip().lower()
-        base_url = os.getenv('APP_BASE_URL', 'http://localhost:5173').strip().rstrip('/')
+        base_url = (os.getenv('APP_BASE_URL', '').strip()
+                    or os.getenv('WEB_ORIGIN', '').strip()
+                    or 'http://localhost:5173').rstrip('/')
         parsed_base = urlparse(base_url)
         production = os.getenv('FLASK_ENV') == 'production' or os.getenv('NODE_ENV') == 'production'
         valid_base = parsed_base.scheme in {'http', 'https'} and parsed_base.netloc and not parsed_base.username and not parsed_base.password
@@ -230,7 +238,7 @@ def create_app():
             'amount': amount,
             'environment': environment if valid_environment else 'test',
             'base_url': base_url if valid_base else '',
-            'configured': bool(os.getenv('CHAPA_SECRET_KEY', '').strip() and valid_amount and valid_base and valid_environment),
+            'configured': bool(chapa_private_key() and valid_amount and valid_base and valid_environment),
         }
 
     def amount_in_cents(value):
@@ -243,9 +251,9 @@ def create_app():
             return None
 
     def verify_chapa_transaction(tx_ref):
-        secret_key = os.getenv('CHAPA_SECRET_KEY', '').strip()
+        secret_key = chapa_private_key()
         if not secret_key:
-            raise ValueError('Chapa payments are not configured. Add CHAPA_SECRET_KEY to backend/.env.')
+            raise ValueError('Chapa payments are not configured. Add CHAPA_PRIVATE_KEY to backend/.env.')
         try:
             response = requests.get(
                 f'https://api.chapa.co/v1/transaction/verify/{tx_ref}',
@@ -416,6 +424,25 @@ def create_app():
                                 'displayName': student.display_name,
                                 'activeSubscription': subscription_json(subscription)})
 
+    @app.patch('/api/auth/profile')
+    @student_required
+    def update_student_profile():
+        student = db.session.scalar(select(Student).where(
+            Student.id == g.student_id, Student.company_id == COMPANY_ID))
+        if not student:
+            return fail('Student account not found.', 401)
+        if student.phone == 'DEMO-PREVIEW':
+            return fail('Preview account profile names cannot be changed.', 403)
+        display_name = json_body().get('displayName')
+        display_name = display_name.strip()[:100] if isinstance(display_name, str) else ''
+        if len(display_name) < 2:
+            return fail('Enter a name between 2 and 100 characters.', 400)
+        student.display_name = display_name
+        db.session.commit()
+        return jsonify(student={'id': student.id, 'phone': student.phone,
+                                'displayName': student.display_name,
+                                'activeSubscription': subscription_json(active_subscription(student.id))})
+
     @app.get('/api/payments/chapa/config')
     def chapa_config():
         configuration = chapa_configuration()
@@ -430,7 +457,7 @@ def create_app():
     def chapa_initialize():
         configuration = chapa_configuration()
         if not configuration['configured']:
-            return fail('Chapa is not configured. Set CHAPA_SECRET_KEY in backend/.env and APP_BASE_URL for your site.', 503)
+            return fail('Chapa is not configured. Set CHAPA_PRIVATE_KEY in backend/.env and APP_BASE_URL for your site.', 503)
         data = json_body()
         email = data.get('email', '').strip().lower() if isinstance(data.get('email'), str) else ''
         if len(email) > 254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
@@ -451,6 +478,8 @@ def create_app():
             raise
 
         names = (student.display_name or 'Student').strip().split()
+        phone_digits = re.sub(r'\D', '', student.phone or '')
+        chapa_phone = f'0{phone_digits[3:]}' if phone_digits.startswith('251') and len(phone_digits) == 12 else None
         tx_ref = subscription.id
         callback_url = f"{configuration['base_url']}/api/payments/chapa/callback?{urlencode({'tx_ref': tx_ref})}"
         return_url = f"{configuration['base_url']}/?{urlencode({'payment': 'chapa', 'tx_ref': tx_ref})}#app"
@@ -460,7 +489,7 @@ def create_app():
             provider_response = requests.post(
                 'https://api.chapa.co/v1/transaction/initialize',
                 headers={
-                    'Authorization': f"Bearer {os.getenv('CHAPA_SECRET_KEY', '').strip()}",
+                    'Authorization': f'Bearer {chapa_private_key()}',
                     'Content-Type': 'application/json',
                 },
                 json={
@@ -469,7 +498,7 @@ def create_app():
                     'email': email,
                     'first_name': names[0] if names else 'Student',
                     'last_name': ' '.join(names[1:]) or 'Student',
-                    'phone_number': student.phone,
+                    **({'phone_number': chapa_phone} if chapa_phone else {}),
                     'tx_ref': tx_ref,
                     'return_url': return_url,
                     'customization': {'title': 'Sura Study', 'description': 'One month of study access'},
@@ -485,13 +514,26 @@ def create_app():
             logger.warning('Chapa initialization returned invalid JSON.')
             return fail('Chapa returned an unreadable checkout response. Please try again.', 502)
 
-        checkout_url = result.get('data', {}).get('checkout_url') if isinstance(result, dict) else None
+        provider_data = result.get('data') if isinstance(result, dict) else None
+        checkout_url = provider_data.get('checkout_url') if isinstance(provider_data, dict) else None
         parsed_checkout = urlparse(checkout_url) if isinstance(checkout_url, str) else None
-        if (not provider_response.ok or result.get('status') != 'success'
+        if (not provider_response.ok or not isinstance(result, dict) or result.get('status') != 'success'
                 or not parsed_checkout or parsed_checkout.scheme != 'https'
                 or parsed_checkout.hostname != 'checkout.chapa.co'):
             logger.warning('Chapa initialization failed with HTTP status %s.', provider_response.status_code)
-            return fail('Chapa could not start checkout. Check your Chapa test key and try again.', 502)
+            provider_message = result.get('message', '') if isinstance(result, dict) else ''
+            provider_message = re.sub(r'[\x00-\x1f\x7f]+', ' ', provider_message).strip()[:240] if isinstance(provider_message, str) else ''
+            if provider_response.status_code == 401:
+                error_message = 'Chapa rejected the private key or the merchant is not enabled to accept API payments. Re-copy the Test Private/Secret key from Chapa Settings → API Keys, confirm the account can accept payments, then restart Flask.'
+            elif provider_response.status_code == 404 and 'payments through api' in provider_message.lower():
+                error_message = 'Chapa API payments are disabled for this merchant account. Enable API payments in Chapa or contact Chapa support.'
+            elif provider_response.status_code == 429:
+                error_message = 'Chapa is receiving too many requests. Wait a moment, then try again.'
+            elif provider_message:
+                error_message = f'Chapa could not start checkout: {provider_message}'
+            else:
+                error_message = 'Chapa did not return a valid hosted checkout link. Check your Chapa merchant setup and try again.'
+            return fail(error_message, 502)
         return jsonify(checkoutUrl=checkout_url)
 
     @app.post('/api/payments/chapa/verify')

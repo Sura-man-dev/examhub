@@ -42,7 +42,8 @@ If you just copied `.env.example`, edit `.env` and set:
 - `GEMINI_API_KEY`: your private Google AI Studio key
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD`: the admin portal credentials
 - `CHAPA_ENV`: `test` while using Chapa test credentials; change to `live` only when ready
-- `CHAPA_SECRET_KEY`: private secret key from the matching Chapa environment
+- `CHAPA_PRIVATE_KEY`: private/secret key from the matching Chapa environment. The dashboard may label it private; Chapa's API docs call it the secret key. Keep it only in this server-side `.env` file.
+- `CHAPA_PUBLIC_KEY`: optional public key for other client-side Chapa integrations. This hosted checkout flow does not send it to the browser or require it.
 - `CHAPA_AMOUNT`: monthly plan price in ETB (currently set to `200`)
 - `APP_BASE_URL`: frontend origin used for payment return and callback URLs
 
@@ -54,12 +55,13 @@ The student app sends checkout requests to the backend. Keep the Chapa secret ke
 
 ```dotenv
 CHAPA_ENV="test"
-CHAPA_SECRET_KEY="your-private-test-secret"
+CHAPA_PRIVATE_KEY="your-private-test-key"
+CHAPA_PUBLIC_KEY="your-test-public-key"
 CHAPA_AMOUNT="200"
 APP_BASE_URL="http://localhost:5173"
 ```
 
-Restart the backend after changing `.env`. The app sends the student to Chapa-hosted checkout, then verifies the transaction with Chapa's API before activating the one-month subscription. The backend checks the transaction reference, status, amount, and ETB currency; the return URL alone never grants access. Preview accounts cannot purchase plans. In production, set `CHAPA_ENV="live"`, use the live secret key, and set `APP_BASE_URL` to the public HTTPS frontend origin. The backend's public callback also verifies with Chapa before activating access.
+Restart the backend after changing `.env`. The app sends the student to Chapa-hosted checkout, then verifies the transaction with Chapa's API before activating the one-month subscription. The backend checks the transaction reference, status, amount, and ETB currency; the return URL alone never grants access. Preview accounts cannot purchase plans. In production, set `CHAPA_ENV="live"`, use the matching live private/secret key, and set `APP_BASE_URL` to the public HTTPS frontend origin. The backend's callback also verifies with Chapa before activating access. `CHAPA_SECRET_KEY` remains accepted as a legacy alias for `CHAPA_PRIVATE_KEY`.
 
 The current checkout requests an email for Chapa's receipt; the account itself continues to use phone sign-in. Until a secret key is set, the app displays a setup notice and disables the payment button. Do not use a test key for live charges.
 

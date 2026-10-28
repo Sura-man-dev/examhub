@@ -16,7 +16,7 @@
 .button-small { min-height: 39px; padding-inline: 16px; font-size: 11px; }
 .button-dark { color: #fff; background: var(--navy); box-shadow: 0 6px 14px #17233f1c; }
 .button-dark:hover { background: #263c67; box-shadow: 0 9px 18px #17233f2a; }
-.menu-toggle, .mobile-nav-cta { display: none; }
+.menu-toggle, .mobile-nav-cta, .mobile-profile-link { display: none; }
 
 .hero-section { min-height: 668px; position: relative; padding-top: 76px; background: radial-gradient(ellipse at 77% 46%, #eff3ff 0%, #f6f8fe 30%, #fff 66%); }
 .hero-grid { display: grid; grid-template-columns: .86fr 1.14fr; align-items: center; gap: 14px; min-height: 486px; }
@@ -442,8 +442,10 @@
   .nav-links { position: absolute; top: 67px; right: 0; left: 0; display: none; align-items: stretch; gap: 0; margin: 0; padding: 8px 21px 18px; border-bottom: 1px solid #e8ecf3; background: #fff; box-shadow: 0 15px 20px #1c2e4b10; }
   .nav-links-open { display: flex; flex-direction: column; }
   .nav-links > a { padding: 13px 3px; border-bottom: 1px solid #f0f2f6; font-size: 13px; }
-  .nav-links > .mobile-nav-cta { display: none; }
-  .nav-actions > .button:not(.profile-nav-button) { display: none; }
+  .nav-links > .mobile-nav-cta, .nav-links > .mobile-profile-link { display: flex; align-items: center; gap: 9px; min-height: 46px; padding: 12px 3px; border-bottom: 1px solid #f0f2f6; font-size: 13px; }
+  .nav-links > .mobile-nav-cta { justify-content: space-between; color: #4c67c3; }
+  .nav-links > .mobile-profile-link { color: #35445f; }
+  .nav-actions > .button:not(.profile-nav-button), .nav-actions > .profile-nav-button { display: none; }
   .nav-actions { gap: 16px; margin-left: auto; margin-right: 16px; }
   .nav-actions .button { min-height: 35px; padding-inline: 12px; font-size: 10px; }
   .sign-in-link { font-size: 11px; }
@@ -1250,6 +1252,10 @@
 .auth-change-phone { justify-self:start;padding:2px 0;border:0;color:#526bc7;background:transparent;font-size:11px;font-weight:700;cursor:pointer; }
 .auth-change-phone:hover { color:#304da9;text-decoration:underline; }
 .auth-loading,.admin-loading { min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:14px;color:#66748d;background:#f7f9fd;font-size:13px; }
+.loading-spinner { width:19px;height:19px;display:inline-block;flex:0 0 auto;border:2px solid #dce4f5;border-top-color:#4e69ca;border-radius:50%;animation:loading-spin .78s linear infinite; }
+.loading-spinner-large { width:38px;height:38px;border-width:3px;box-shadow:0 5px 18px #526dc51c; }
+.nav-loading-spinner { width:16px;height:16px;border-width:2px; }
+@keyframes loading-spin { to { transform:rotate(360deg); } }
 .admin-loader { width:27px;height:27px;border:3px solid #dbe2f4;border-top-color:#4966d0;border-radius:50%;animation:ai-bounce .8s linear infinite; }
 .admin-login-page { position:relative;min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% 10%,#fff,#f0f3fb 68%,#e8edf8);font-family:'DM Sans',sans-serif; }
 .admin-login-card { width:min(420px,100%);display:grid;gap:14px;padding:34px;border:1px solid #e4e9f2;border-radius:22px;background:#fff;box-shadow:0 24px 70px #1b2a4818; }
@@ -1740,3 +1746,103 @@
 @media (prefers-reduced-motion: reduce) {
   .study-step-reveal { animation: none; }
 }
+
+/* University selector brand and readable native study-path controls. */
+.university-dropdown-brand { display:flex; align-items:center; gap:10px; margin:0 0 8px; padding:8px 9px 11px; border-bottom:1px solid #edf0f5; }
+.university-dropdown-brand img { width:36px; height:36px; object-fit:contain; border-radius:50%; background:#fff; }
+.university-dropdown-brand span { display:grid; gap:3px; }
+.university-dropdown-brand b { color:#30405e; font-size:10px; }
+.university-dropdown-brand small { color:#8490a4; font-size:8px; }
+.student-selection-row .course-picker select { color:#273754; -webkit-text-fill-color:#273754; }
+.student-selection-row .course-picker select option { color:#273754; background:#fff; }
+.theme-dark .student-selection-row .course-picker select { color:#edf2fb; -webkit-text-fill-color:#edf2fb; }
+.theme-dark .student-selection-row .course-picker select option { color:#26344d; background:#fff; }
+.theme-dark .university-dropdown-brand { border-color:#303b51; }
+.theme-dark .university-dropdown-brand b { color:#e0e7f3; }
+.theme-dark .university-dropdown-brand small { color:#9ba9c0; }
+.university-dropdown-option { min-height:58px; transition:background .16s ease, transform .16s ease; }
+.university-dropdown-option:hover { transform:translateX(2px); }
+.university-dropdown-option .university-mark { width:40px; height:40px; border-radius:11px; }
+.university-dropdown-option .university-mark img { padding:4px; }
+.university-dropdown-option.active { box-shadow:inset 0 0 0 1px #dce4ff; }
+.university-dropdown-brand img { border:1px solid #e6eaf2; padding:2px; }
+@media (prefers-reduced-motion:reduce) { .university-dropdown-option { transition:none; } .university-dropdown-option:hover { transform:none; } }
+
+/* Focused, scroll-through practice exam */
+.demo-exam-shell.exam-fullscreen,
+.demo-exam-shell:fullscreen { position:fixed; z-index:10000; inset:0; width:100vw; height:100dvh; max-height:none; overflow-y:auto; margin:0; padding:clamp(18px,4vw,56px) max(18px,calc((100vw - 1080px)/2)); border:0; border-radius:0; background:#f5f7fb; box-shadow:none; }
+.demo-exam-shell.exam-fullscreen > .demo-exam-heading,
+.demo-exam-shell:fullscreen > .demo-exam-heading { display:none; }
+.demo-exam-active { max-width:1000px; margin:0 auto; padding:clamp(18px,3vw,36px); border-color:#e2e7f0; border-radius:18px; box-shadow:0 18px 60px #24375912; }
+.demo-exam-pro-header { display:flex; align-items:center; justify-content:space-between; gap:20px; padding-bottom:18px; border-bottom:1px solid #edf0f5; }
+.demo-exam-brand { display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+.demo-exam-brand img { width:40px; height:40px; object-fit:contain; }
+.demo-exam-brand span { display:grid; gap:3px; }
+.demo-exam-brand b { color:#263651; font:800 14px 'Manrope',sans-serif; }
+.demo-exam-brand small { color:#8a96aa; font-size:10px; }
+.demo-exam-pro-header .demo-exam-active-top { justify-content:flex-end; flex-wrap:wrap; }
+.demo-exam-university { display:inline-flex; align-items:center; gap:7px; color:#596780; }
+.demo-exam-university .university-mark { width:30px; height:30px; border-radius:8px; }
+.demo-exam-quit { min-height:36px; display:inline-flex; align-items:center; gap:7px; padding:0 11px; border:1px solid #e5e9f1; border-radius:8px; color:#66738a; background:#fff; font:700 11px 'DM Sans',sans-serif; cursor:pointer; }
+.demo-exam-quit:hover { border-color:#f0c6c4; color:#a64646; background:#fff8f7; }
+.demo-exam-instructions { margin:18px 0 4px; color:#8691a4; font-size:11px; }
+.demo-exam-question-list { display:grid; gap:14px; margin-top:16px; }
+.demo-exam-question { padding:22px; border:1px solid #e8ecf3; border-radius:13px; background:#fff; scroll-margin-top:18px; }
+.demo-exam-question h3 { margin:10px 0 16px; color:#273650; font:700 17px/1.55 'Manrope',sans-serif; }
+.demo-exam-question .demo-answer-list { max-width:none; }
+.demo-exam-check { min-height:35px; display:inline-flex; align-items:center; gap:7px; margin-top:12px; padding:0 12px; border:0; border-radius:7px; color:#fff; background:#4d68c6; font:700 10px 'DM Sans',sans-serif; cursor:pointer; }
+.demo-exam-check:disabled { opacity:.45; cursor:not-allowed; }
+.demo-exam-question .demo-answer-feedback { margin-top:12px; }
+.demo-exam-submit { position:sticky; bottom:0; display:flex; align-items:center; justify-content:space-between; gap:15px; margin:20px -2px -2px; padding:14px 16px; border:1px solid #e5eaf2; border-radius:12px; background:#ffffffed; box-shadow:0 -7px 25px #2336530c; backdrop-filter:blur(10px); }
+.demo-exam-submit span { color:#718098; font-size:11px; }
+.demo-exam-submit button { min-height:40px; display:inline-flex; align-items:center; gap:8px; padding:0 16px; border:0; border-radius:8px; color:white; background:linear-gradient(115deg,#405fc7,#607be0); font:700 11px 'DM Sans',sans-serif; cursor:pointer; }
+.theme-dark .demo-exam-shell.exam-fullscreen,.theme-dark .demo-exam-shell:fullscreen { background:#111827; }
+.theme-dark .demo-exam-active,.theme-dark .demo-exam-question { border-color:#303b51; background:#1c2536; }
+.theme-dark .demo-exam-pro-header { border-color:#303b51; }
+.theme-dark .demo-exam-brand b,.theme-dark .demo-exam-question h3 { color:#e2e8f4; }
+.theme-dark .demo-exam-brand small,.theme-dark .demo-exam-university,.theme-dark .demo-exam-instructions { color:#a5b2c7; }
+.theme-dark .demo-exam-quit { border-color:#39465e; color:#c5cee0; background:#202c40; }
+.theme-dark .demo-exam-submit { border-color:#39465e; background:#1c2536ed; }
+.theme-dark .demo-exam-submit span { color:#a5b2c7; }
+@media (max-width:700px) {
+  .demo-exam-shell.exam-fullscreen,.demo-exam-shell:fullscreen { padding:12px; }
+  .demo-exam-active { padding:15px; border-radius:13px; }
+  .demo-exam-pro-header { align-items:flex-start; flex-direction:column; }
+  .demo-exam-pro-header .demo-exam-active-top { width:100%; justify-content:space-between; }
+  .demo-exam-university { max-width:100%; font-size:9px; }
+  .demo-exam-university .university-mark { width:27px; height:27px; }
+  .demo-exam-question { padding:16px; }
+  .demo-exam-question h3 { font-size:15px; }
+  .demo-exam-submit { margin-inline:0; }
+}
+
+/* Clear study-path fields with a consistent, high-contrast selection state. */
+.student-selection-row .course-picker { min-height:88px; gap:11px; border-color:#e1e7f1; background:linear-gradient(145deg,#fff,#fbfcff); transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease; }
+.student-selection-row .course-picker:focus-within { border-color:#8ea3e8; box-shadow:0 0 0 4px #e9eeff; transform:translateY(-1px); }
+.student-selection-row .course-picker > span { color:#74819a; }
+.student-selection-row .course-picker select { height:32px; padding-right:5px; color:#263550; font-size:13px; font-weight:700; letter-spacing:-.1px; cursor:pointer; }
+.student-selection-row .course-picker select:focus { outline:0; }
+.student-selection-row .course-picker select option { font-weight:600; }
+.theme-dark .student-selection-row .course-picker { border-color:#36435b; background:linear-gradient(145deg,#1d2739,#1a2333); }
+.theme-dark .student-selection-row .course-picker:focus-within { border-color:#7187d4; box-shadow:0 0 0 4px #35436a; }
+.theme-dark .student-selection-row .course-picker > span { color:#aab6cb; }
+.theme-dark .student-selection-row .course-picker select { color:#f0f3fa; -webkit-text-fill-color:#f0f3fa; }
+.profile-name-form { max-width:760px; display:grid; gap:8px; margin:0 0 14px; padding:14px; border:1px solid #e8ecf3; border-radius:11px; background:#fff; }
+.profile-name-form label { color:#63718a; font-size:9px; font-weight:700; }
+.profile-name-form > div { display:flex; align-items:center; gap:8px; }
+.profile-name-form input { min-width:0; min-height:40px; flex:1; padding:0 11px; border:1px solid #e1e6ef; border-radius:8px; outline:0; color:#2f3e58; background:#fff; font:600 11px 'DM Sans',sans-serif; }
+.profile-name-form input:focus { border-color:#91a5e9; box-shadow:0 0 0 3px #edf1ff; }
+.profile-name-form button { min-height:40px; padding:0 13px; border:0; border-radius:8px; color:#fff; background:#4d68c6; font:700 10px 'DM Sans',sans-serif; cursor:pointer; }
+.profile-name-form button:disabled { opacity:.6; cursor:wait; }
+.profile-name-form > small { font-size:9px; }
+.profile-name-form > small.success { color:#34704a; }
+.profile-name-form > small.error { color:#a54b4b; }
+.theme-dark .profile-name-form { border-color:#303b51; background:#1c2536; }
+.theme-dark .profile-name-form label { color:#aab6cb; }
+.theme-dark .profile-name-form input { border-color:#39465e; color:#e2e8f4; background:#202c40; }
+.site-home.theme-dark .nav-links > .mobile-profile-link { color:#d8e0ef; }
+.site-home.theme-dark .nav-links > .mobile-nav-cta { color:#b7c5ff; }
+.auth-loading { color:#63718a; }
+.auth-loading .loading-spinner { border-color:#e2e8f3;border-top-color:#4e69ca; }
+@media (prefers-reduced-motion:reduce) { .loading-spinner { animation-duration:2s; } }
+@media (max-width:520px) { .profile-name-form > div { align-items:stretch; flex-direction:column; } .profile-name-form button { width:100%; } }

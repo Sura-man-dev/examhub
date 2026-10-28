@@ -79,11 +79,23 @@ const universityInitials = {
 const universityLogoSources = {
   'Addis Ababa University': ['/university-logos/addis.jpeg'],
   'Bahir Dar University': ['/university-logos/bahir-dar-university.jpg'],
-  'Hawassa University': ['/university-logos/hawassa-university.webp'],
-  'Haramaya University': ['/university-logos/haramaya-university.png'],
   'Adama Science and Technology University': ['/university-logos/adama.jpeg'],
   'University of Gondar': ['/university-logos/gondar-university.png'],
   'Samara University': ['/university-logos/semera.jpeg'],
+  'Arba Minch University': ['/university-logos/arbamich.jpeg'],
+  'Wachemo University': ['/university-logos/wachamo.jpeg'],
+  'Arsi University': ['/university-logos/arce.jpeg'],
+  'Jimma University': ['/university-logos/jimma.png'],
+  'Dire Dawa University': ['/university-logos/dire dawa.jpeg'],
+  'Debre Tabor University': ['/university-logos/deberetabor.jpeg'],
+  'Debre Markos University': ['/university-logos/debra markos.jpeg'],
+  'Wollo University': ['/university-logos/wollo.jpeg'],
+  'Wollega University': ['/university-logos/wolega.jpeg'],
+  'Werabe University': ['/university-logos/werabe.jpeg'],
+  'Oda Bultum University': ['/university-logos/adabultu.jpeg'],
+  'Hawassa University': ['/university-logos/hawassa.jpeg', '/university-logos/hawassa-university.webp'],
+  'Haramaya University': ['/university-logos/haremaya.jpeg', '/university-logos/haramaya-university.png'],
+  'Gambella University': ['/university-logos/gambeal.jpeg', '/university-logos/gambela.jpeg'],
 }
 
 function UniversityMark({ name }) {
@@ -134,6 +146,7 @@ function UniversityDropdown({ choices, value, onChange }) {
       <ChevronDown size={16} />
     </button>
     {open && <div className="university-dropdown-menu">
+      <div className="university-dropdown-brand"><img src="/university-logos/chooseUniversity.jpeg" alt="Ethiopian Ministry of Education" /><span><b>Ministry of Education</b><small>Choose your university</small></span></div>
       <label className="university-dropdown-search"><Search size={15} /><input autoFocus type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search universities" aria-label="Search universities" /></label>
       <div className="university-dropdown-list" role="listbox" aria-label="Universities">
         {filteredChoices.length ? filteredChoices.map((item) => <button type="button" role="option" aria-selected={item.name === value} className={`university-dropdown-option${item.name === value ? ' active' : ''}`} key={item.id || item.name} onClick={() => selectUniversity(item.name)}>
@@ -250,6 +263,9 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
   const [paymentConfig, setPaymentConfig] = useState({ amount: 200, currency: 'ETB', environment: 'test', configured: false })
   const [paymentConfigError, setPaymentConfigError] = useState('')
   const [billingEmail, setBillingEmail] = useState('')
+  const [profileName, setProfileName] = useState(student?.displayName || '')
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileMessage, setProfileMessage] = useState('')
   const [paymentNotice, setPaymentNotice] = useState(() => {
     const search = new URLSearchParams(window.location.search)
     return search.get('payment') === 'chapa' && !search.get('tx_ref')
@@ -266,6 +282,30 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
   function openCheckout() {
     setPaymentNotice('')
     setTab('checkout')
+  }
+
+  useEffect(() => { setProfileName(student?.displayName || '') }, [student?.displayName])
+
+  async function saveProfileName(event) {
+    event.preventDefault()
+    setProfileSaving(true)
+    setProfileMessage('')
+    try {
+      const response = await fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ displayName: profileName }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.error || 'Could not save your profile name.')
+      onStudentUpdate(result.student)
+      setProfileMessage('Your profile name has been updated.')
+    } catch (error) {
+      setProfileMessage(error.message || 'Could not save your profile name.')
+    } finally {
+      setProfileSaving(false)
+    }
   }
 
   useEffect(() => {
@@ -392,6 +432,7 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
         </header>
 
         <div className="phone-scroll-area">
+          {tab !== 'home' && tab !== 'checkout' && !readingResource && <button className="checkout-back student-page-back" type="button" onClick={() => setTab('home')}><ArrowLeft size={15} /> Back to study space</button>}
           {tab === 'home' && <div className="student-home-grid">
             <div className="student-home-main">
               <section className="student-welcome"><span className="student-overline">YOUR LEARNING, IN ONE PLACE</span><h1>Ready to make progress?</h1><p>Choose your university, exam year, and course to open free sample materials.</p></section>
@@ -433,6 +474,7 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
             <section className="student-page-heading"><span className="student-overline">YOUR ACCOUNT</span><h1>Profile</h1><p>Manage your student learning space.</p></section>
             {paymentNotice && <p className={`student-notice${paymentNotice.startsWith('Payment confirmed') ? ' payment-success-notice' : ''}`} role="status">{paymentBusy ? 'Checking your Chapa payment…' : paymentNotice}</p>}
             <div className="profile-card"><span className="profile-avatar">{(student?.displayName || 'S').slice(0, 1).toUpperCase()}</span><div><b>{student?.displayName || 'Student'}</b><small>{student?.phone === 'DEMO-PREVIEW' ? 'Temporary demo account' : `Phone sign-in · ${student?.phone}`}</small></div><ShieldCheck size={18} /></div>
+            {student?.phone !== 'DEMO-PREVIEW' && <form className="profile-name-form" onSubmit={saveProfileName}><label htmlFor="profile-display-name">Name shown on your profile</label><div><input id="profile-display-name" value={profileName} onChange={(event) => setProfileName(event.target.value)} minLength={2} maxLength={100} autoComplete="name" required /><button type="submit" disabled={profileSaving}>{profileSaving ? 'Saving…' : 'Save name'}</button></div>{profileMessage && <small className={profileMessage.startsWith('Your profile') ? 'success' : 'error'} role={profileMessage.startsWith('Your profile') ? 'status' : 'alert'}>{profileMessage}</small>}</form>}
             <div className="student-profile-row"><span>University</span><b>{selectedUniversityName || 'Not selected'}</b></div><div className="student-profile-row"><span>Study path</span><b>{hasStudySelection ? `${year} · ${selectedCourse.title}` : 'Not selected'}</b></div><div className="student-profile-row"><span>Current plan</span><b className={student?.activeSubscription ? '' : 'locked-label'}>{student?.activeSubscription ? `Active until ${new Date(student.activeSubscription.endsAt).toLocaleDateString()}` : 'No active plan'}</b></div>
             <SubscriptionCard price={paymentConfig.amount} onChoose={openCheckout} />
           </>}
@@ -450,7 +492,7 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
                 <div className="payment-option payment-option-soon" aria-label="Telebirr, coming soon"><span className="payment-radio" /><span className="payment-brand telebirr-brand"><img src="/payment-logos/telebirr.jpg" alt="Telebirr logo" /></span><span className="payment-description"><b>Telebirr</b><small>Mobile money payment</small></span><span className="payment-coming-soon">Coming soon</span></div>
               </div>
               {paymentConfig.environment === 'test' && <p className="chapa-test-note"><ShieldCheck size={15} /> Test mode — use Chapa test credentials; no real money should be charged.</p>}
-              {!paymentConfig.configured && <p className="student-notice" role="status">{paymentConfigError || 'Chapa is not configured yet. Add CHAPA_SECRET_KEY to backend/.env to enable checkout.'}</p>}
+              {!paymentConfig.configured && <p className="student-notice" role="status">{paymentConfigError || 'Chapa is not configured yet. Add your CHAPA_PRIVATE_KEY to backend/.env, then restart Flask.'}</p>}
               {paymentNotice && <p className="student-notice" role="alert">{paymentNotice}</p>}
               <button type="submit" className="checkout-pay-button" disabled={paymentBusy || !paymentConfig.configured}>{paymentBusy ? 'Connecting to Chapa…' : `Pay ETB ${Number(paymentConfig.amount || 0).toLocaleString('en-ET')} with Chapa`} <ArrowRight size={15} /></button>
             </form>
@@ -472,16 +514,21 @@ function DemoExamWorkspace({ university, year, course, onChoosePath }) {
   const [duration, setDuration] = useState('10')
   const [running, setRunning] = useState(false)
   const [finished, setFinished] = useState(false)
+  const [endedEarly, setEndedEarly] = useState(false)
   const [remaining, setRemaining] = useState(0)
-  const [index, setIndex] = useState(0)
   const [answers, setAnswers] = useState({})
   const [checked, setChecked] = useState({})
-  const [explanationOpen, setExplanationOpen] = useState(false)
+  const [explanationOpen, setExplanationOpen] = useState({})
+  const examShellRef = useRef(null)
   const exam = demoExams[course]?.find((item) => item.year === year)
-  const question = exam?.questions[index]
-  const currentAnswer = answers[index]
-  const isChecked = Boolean(checked[index])
   const score = exam?.questions.reduce((total, item, questionIndex) => total + (checked[questionIndex] && answers[questionIndex] === item.answer ? 1 : 0), 0) || 0
+
+  useEffect(() => {
+    if (!running) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [running])
 
   useEffect(() => {
     if (!running) return undefined
@@ -490,7 +537,9 @@ function DemoExamWorkspace({ university, year, course, onChoosePath }) {
         window.clearInterval(timer)
         setRemaining(0)
         setRunning(false)
+        setEndedEarly(false)
         setFinished(true)
+        if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
       } else {
         setRemaining((seconds) => seconds - 1)
       }
@@ -500,19 +549,28 @@ function DemoExamWorkspace({ university, year, course, onChoosePath }) {
 
   function startExam() {
     if (!exam?.questions.length) return
-    setIndex(0); setAnswers({}); setChecked({}); setExplanationOpen(false)
-    setRemaining(Number(duration) * 60); setFinished(false); setRunning(true)
+    setAnswers({}); setChecked({}); setExplanationOpen({})
+    setRemaining(Number(duration) * 60); setFinished(false); setEndedEarly(false); setRunning(true)
+    window.setTimeout(() => { if (examShellRef.current?.requestFullscreen) examShellRef.current.requestFullscreen().catch(() => {}) }, 0)
   }
 
-  function moveNext() {
-    setExplanationOpen(false)
-    if (index >= exam.questions.length - 1) { setRunning(false); setFinished(true) }
-    else setIndex((current) => current + 1)
+  function quitExam() {
+    setRunning(false)
+    setEndedEarly(true)
+    setFinished(true)
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+  }
+
+  function finishExam() {
+    setRunning(false)
+    setEndedEarly(false)
+    setFinished(true)
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
   }
 
   const formattedTime = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`
 
-  return <section className="demo-exam-shell">
+  return <section ref={examShellRef} className={`demo-exam-shell${running ? ' exam-fullscreen' : ''}`}>
     <div className="demo-exam-heading"><span className="student-overline">FREE PRACTICE · SAMPLE DATA</span><h2>Build your practice exam</h2><p>Practice questions are demonstration content, not official past papers or university exam records.</p></div>
     {!running && !finished && <>
       {university && year && course ? <>
@@ -521,20 +579,28 @@ function DemoExamWorkspace({ university, year, course, onChoosePath }) {
         <div className="demo-exam-start-row"><span><Timer size={15} /> {exam ? `${exam.questions.length} free sample questions · answers explained` : 'No sample exam is available for this course yet'}</span><button type="button" disabled={!exam} onClick={startExam}><Play size={15} /> Start timed exam</button></div>
       </> : <div className="selection-empty-state"><b>Choose a university, year, and course</b><p>Your selected course and year will appear here when your study path is ready.</p><button type="button" onClick={onChoosePath}>Choose study path <ArrowRight size={14} /></button></div>}
     </>}
-    {running && question && <div className="demo-exam-active">
-      <div className="demo-exam-active-top"><span>{course} <i>·</i> {year} sample</span><span className={`demo-exam-clock${remaining < 60 ? ' urgent' : ''}`}><Clock3 size={16} /> {formattedTime}</span></div>
-      <div className="demo-exam-progress"><i style={{ width: `${((index + 1) / exam.questions.length) * 100}%` }} /></div>
-      <div className="demo-question-meta">QUESTION {String(index + 1).padStart(2, '0')} <span>OF {exam.questions.length}</span></div>
-      <h3>{question.prompt}</h3>
-      <div className="demo-answer-list">{question.choices.map((choice, choiceIndex) => {
-        const correct = isChecked && choiceIndex === question.answer
-        const wrong = isChecked && currentAnswer === choiceIndex && choiceIndex !== question.answer
-        return <button type="button" key={choice} disabled={isChecked} aria-pressed={currentAnswer === choiceIndex} className={`${currentAnswer === choiceIndex ? 'chosen ' : ''}${correct ? 'correct ' : ''}${wrong ? 'wrong' : ''}`} onClick={() => setAnswers((current) => ({ ...current, [index]: choiceIndex }))}><i>{String.fromCharCode(65 + choiceIndex)}</i><span>{choice}</span>{correct && <Check size={17} />}{wrong && <X size={17} />}</button>
+    {running && exam && <div className="demo-exam-active">
+      <div className="demo-exam-pro-header"><div className="demo-exam-brand"><img src="/sura-crown-emblem.webp" alt="" /><span><b>Sura Study</b><small>Timed practice exam</small></span></div><div className="demo-exam-active-top"><span className="demo-exam-university"><UniversityMark name={university} />{university} <i>·</i> {course} · {year}</span><span className={`demo-exam-clock${remaining < 60 ? ' urgent' : ''}`}><Clock3 size={16} /> {formattedTime}</span><button type="button" className="demo-exam-quit" onClick={quitExam}>Quit exam <X size={15} /></button></div></div>
+      <div className="demo-exam-progress"><i style={{ width: `${(Object.keys(answers).length / exam.questions.length) * 100}%` }} /></div>
+      <div className="demo-exam-instructions">Answer each question as you scroll. Your choices are saved automatically on this page.</div>
+      <div className="demo-exam-question-list">{exam.questions.map((item, questionIndex) => {
+        const itemChecked = Boolean(checked[questionIndex])
+        const itemAnswer = answers[questionIndex]
+        return <article className="demo-exam-question" key={item.prompt}>
+          <div className="demo-question-meta">QUESTION {String(questionIndex + 1).padStart(2, '0')} <span>OF {exam.questions.length}</span></div>
+          <h3>{item.prompt}</h3>
+          <div className="demo-answer-list">{item.choices.map((choice, choiceIndex) => {
+            const correct = itemChecked && choiceIndex === item.answer
+            const wrong = itemChecked && itemAnswer === choiceIndex && choiceIndex !== item.answer
+            return <button type="button" key={choice} disabled={itemChecked} aria-pressed={itemAnswer === choiceIndex} className={`${itemAnswer === choiceIndex ? 'chosen ' : ''}${correct ? 'correct ' : ''}${wrong ? 'wrong' : ''}`} onClick={() => setAnswers((current) => ({ ...current, [questionIndex]: choiceIndex }))}><i>{String.fromCharCode(65 + choiceIndex)}</i><span>{choice}</span>{correct && <Check size={17} />}{wrong && <X size={17} />}</button>
+          })}</div>
+          {itemChecked && <div className={`demo-answer-feedback ${itemAnswer === item.answer ? 'is-correct' : 'is-wrong'}`}><b>{itemAnswer === item.answer ? 'Correct answer' : 'Review this answer'}</b><button type="button" onClick={() => setExplanationOpen((current) => ({ ...current, [questionIndex]: !current[questionIndex] }))}>{explanationOpen[questionIndex] ? 'Hide explanation' : 'Show explanation'} <ChevronDown size={14} /></button>{explanationOpen[questionIndex] && <p>{item.explanation}</p>}</div>}
+          {!itemChecked && <button type="button" className="demo-exam-check" disabled={itemAnswer === undefined} onClick={() => setChecked((current) => ({ ...current, [questionIndex]: true }))}>Check answer <Check size={14} /></button>}
+        </article>
       })}</div>
-      {isChecked && <div className={`demo-answer-feedback ${currentAnswer === question.answer ? 'is-correct' : 'is-wrong'}`}><b>{currentAnswer === question.answer ? 'Correct answer' : 'Not quite'}</b><span>{currentAnswer === question.answer ? 'Well done. Review the explanation to reinforce the idea.' : 'The correct choice is highlighted in green. Review why below.'}</span><button type="button" onClick={() => setExplanationOpen((open) => !open)}>{explanationOpen ? 'Hide explanation' : 'Show explanation'} <ChevronDown size={14} /></button>{explanationOpen && <p>{question.explanation}</p>}</div>}
-      <div className="demo-exam-footer"><span>{isChecked ? 'Answer saved' : 'Select an answer, then check it'}</span>{isChecked ? <button type="button" onClick={moveNext}>{index === exam.questions.length - 1 ? 'Finish exam' : 'Next question'} <ArrowRight size={14} /></button> : <button type="button" disabled={currentAnswer === undefined} onClick={() => setChecked((current) => ({ ...current, [index]: true }))}>Check answer <Check size={14} /></button>}</div>
+      <div className="demo-exam-submit"><span>{Object.keys(checked).length} of {exam.questions.length} answers checked</span><button type="button" onClick={finishExam}>Finish exam <Check size={16} /></button></div>
     </div>}
-    {finished && exam && <div className="demo-exam-results"><span className="demo-results-icon"><Check size={21} /></span><span className="student-overline">PRACTICE COMPLETE</span><h3>{score} <small>/ {exam.questions.length}</small></h3><p>You completed the {year} {course} sample for {university}.</p><div className="demo-result-review">{exam.questions.map((item, questionIndex) => <details key={item.prompt}><summary>Question {questionIndex + 1} · {answers[questionIndex] === item.answer ? 'Correct' : 'Review answer'}</summary><p>{item.prompt}</p><b>Correct answer: {item.choices[item.answer]}</b><p>{item.explanation}</p></details>)}</div><button type="button" className="demo-restart-button" onClick={onChoosePath}>Choose another study path</button></div>}
+    {finished && exam && <div className="demo-exam-results"><span className="demo-results-icon"><Check size={21} /></span><span className="student-overline">{endedEarly ? 'PRACTICE ENDED' : 'PRACTICE COMPLETE'}</span><h3>{score} <small>/ {exam.questions.length}</small></h3><p>{endedEarly ? 'You ended' : 'You completed'} the {year} {course} sample for {university}.</p><div className="demo-result-review">{exam.questions.map((item, questionIndex) => <details key={item.prompt}><summary>Question {questionIndex + 1} · {answers[questionIndex] === item.answer ? 'Correct' : 'Review answer'}</summary><p>{item.prompt}</p><b>Correct answer: {item.choices[item.answer]}</b><p>{item.explanation}</p></details>)}</div><button type="button" className="demo-restart-button" onClick={onChoosePath}>Choose another study path</button></div>}
   </section>
 }
 
@@ -638,7 +704,7 @@ function AiChatModal({ mode = 'public', demoMode = false, dark = false, universi
   )
 }
 
-function Navbar({ loggedIn = false, dark, onToggleTheme }) {
+function Navbar({ loggedIn = false, loading = false, dark, onToggleTheme }) {
   const [menuOpen, setMenuOpen] = useState(false)
 
   return (
@@ -649,9 +715,10 @@ function Navbar({ loggedIn = false, dark, onToggleTheme }) {
           {navigation.map((item) => (
             <a key={item.label} href={item.href} onClick={() => setMenuOpen(false)}>{item.label}</a>
           ))}
-          <a className="mobile-nav-cta" href={loggedIn ? '#app' : '#register'} onClick={() => setMenuOpen(false)}>{loggedIn ? 'Profile' : 'Get started'} <ArrowRight size={15} /></a>
+          <a className={loggedIn ? 'mobile-profile-link' : 'mobile-nav-cta'} href={loggedIn ? '#app' : '#register'} onClick={() => setMenuOpen(false)}>{loggedIn ? <><UserRound size={16} /> Profile <ArrowRight size={14} /></> : <>Get started <ArrowRight size={15} /></>}</a>
         </div>
         <div className="nav-actions">
+          {loading && <span className="loading-spinner nav-loading-spinner" role="status" aria-label="Checking sign-in" />}
           {loggedIn ? <a className="button button-small button-dark profile-nav-button" href="#app"><UserRound size={15} /> Profile</a> : <><a className="sign-in-link" href="#login">Sign in</a><a className="button button-small button-dark" href="#register">Get started <ArrowRight size={15} /></a></>}
           <button className="site-theme-toggle" type="button" onClick={onToggleTheme} aria-label={`Switch to ${dark ? 'light' : 'dark'} theme`} title={`Switch to ${dark ? 'light' : 'dark'} theme`}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button>
         </div>
@@ -1004,6 +1071,7 @@ function App() {
     }
   })
   const [loggedIn, setLoggedIn] = useState(false)
+  const [authChecking, setAuthChecking] = useState(true)
   const [aiOpen, setAiOpen] = useState(false)
 
   function toggleTheme() {
@@ -1025,7 +1093,7 @@ function App() {
   }
 
   useEffect(() => {
-    fetch('/api/auth/me', { credentials: 'same-origin' }).then((response) => setLoggedIn(response.ok)).catch(() => setLoggedIn(false))
+    fetch('/api/auth/me', { credentials: 'same-origin' }).then((response) => setLoggedIn(response.ok)).catch(() => setLoggedIn(false)).finally(() => setAuthChecking(false))
   }, [])
 
   useEffect(() => {
@@ -1069,7 +1137,7 @@ function App() {
   return (
     <>
       <div className={`site-home${dark ? ' theme-dark' : ''}`}>
-        <Navbar loggedIn={loggedIn} dark={dark} onToggleTheme={toggleTheme} />
+        <Navbar loggedIn={loggedIn} loading={authChecking} dark={dark} onToggleTheme={toggleTheme} />
         <main>
           <HeroSection />
           <FeaturesSection />
@@ -1100,7 +1168,7 @@ function StudentGate({ dark, onToggleTheme, onSignOut }) {
     }).catch(() => { if (active) window.location.hash = 'login' })
     return () => { active = false }
   }, [])
-  if (loading) return <main className="auth-loading"><span className="ai-modal-thinking"><i /> Loading your study space…</span></main>
+  if (loading) return <main className="auth-loading"><span className="loading-spinner loading-spinner-large" role="status" aria-label="Loading" /><span>Loading your study space…</span></main>
   return <StudentExperience dark={dark} onToggleTheme={onToggleTheme} onSignOut={onSignOut} onStudentUpdate={setStudent} student={student} />
 }
 
