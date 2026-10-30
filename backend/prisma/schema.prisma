@@ -75,6 +75,9 @@ model StudyMaterial {
   title        String
   type         MaterialType
   isPublished  Boolean      @default(false)
+  filePath     String?
+  fileName     String?
+  fileSize     Int?
   company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   university   University   @relation(fields: [universityId], references: [id], onDelete: Cascade)
   course       Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)

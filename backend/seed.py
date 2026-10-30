@@ -2,7 +2,6 @@ import os
 
 from sqlalchemy import select
 
-from app import app
 from models import Company, Course, University, db
 
 UNIVERSITIES = [
@@ -65,11 +64,12 @@ def slugify(value):
     return '-'.join(value.lower().split())
 
 
-def main():
+def main(app_instance=None):
     company_id = os.getenv('COMPANY_ID')
     if not company_id:
         raise SystemExit('COMPANY_ID is missing from backend/.env')
-    with app.app_context():
+    
+    def seed_db():
         company = db.session.get(Company, company_id)
         if not company:
             company = Company(id=company_id, name='Sura Study', slug='sura-study')
@@ -90,7 +90,13 @@ def main():
                 if not course:
                     db.session.add(Course(university_id=university.id, title=title, slug=course_slug))
         db.session.commit()
-    print('Sura Study company, universities, and courses are ready.')
+        print('Sura Study company, universities, and courses are ready.')
+
+    if app_instance:
+        with app_instance.app_context():
+            seed_db()
+    else:
+        seed_db()
 
 
 if __name__ == '__main__':
