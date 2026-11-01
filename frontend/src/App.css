@@ -1315,6 +1315,19 @@
 .admin-material-form>h2 { margin:0 0 2px; }
 .admin-form-grid { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
 .admin-panel textarea { min-height:180px;resize:vertical;line-height:1.65; }
+.admin-question-builder { display:grid;gap:14px;padding:15px;border:1px solid #e8ebf3;border-radius:11px;background:#fafbfe; }
+.admin-question-builder-heading { display:flex;align-items:flex-end;justify-content:space-between;gap:15px; }
+.admin-question-builder-heading>div { display:grid;gap:4px; }
+.admin-question-builder-heading b { color:#35425d;font-size:12px; }
+.admin-question-builder-heading small { color:#8995a8;font-size:9px; }
+.admin-question-builder-heading label { width:150px; }
+.admin-question-card { display:grid;gap:11px;margin:0;padding:14px;border:1px solid #e3e8f1;border-radius:10px;background:#fff; }
+.admin-question-card legend { padding:0 6px;color:#536bc3;font-size:10px;font-weight:800; }
+.admin-question-card textarea { min-height:72px; }
+.admin-option-grid { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+.admin-option-grid label { display:grid;gap:5px; }
+.admin-option-grid label>span { display:flex;align-items:center;gap:5px;color:#758198;font-size:9px; }
+.admin-option-grid input[type="radio"] { width:auto; }
 .admin-panel textarea::placeholder,.admin-panel input::placeholder { color:#a0aabb; }
 .admin-form-foot { display:flex;align-items:center;justify-content:space-between;gap:14px; }
 .admin-form-foot small { color:#909bad;font-size:9px; }
@@ -1352,6 +1365,7 @@
 .admin-dark.admin-shell { color:#d9e1ef;background:#121a28; }
 .admin-dark .admin-sidebar,.admin-dark .admin-panel,.admin-dark .admin-material-table,.admin-dark .admin-student-table,.admin-dark .admin-login-card { border-color:#303b50;background:#192437; }
 .admin-dark .admin-topbar { border-color:#303b50;background:#172235ed; }
+.admin-dark .admin-question-builder,.admin-dark .admin-question-card { border-color:#303b50;background:#202c40; }
 .admin-dark .admin-topbar>span b,.admin-dark .admin-welcome h1,.admin-dark .admin-page-heading h1,.admin-dark .admin-stat-card>b,.admin-dark .admin-panel-heading h2,.admin-dark .admin-panel h2,.admin-dark .admin-material-info b,.admin-dark .admin-student-name { color:#e8edf6; }
 .admin-dark .admin-wordmark { color:#e8edf6; }
 .admin-dark .admin-sidebar nav button { color:#a5b1c4; }
@@ -3238,4 +3252,3 @@
   opacity: 0.6;
   cursor: wait;
 }
-

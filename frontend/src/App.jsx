@@ -16,8 +16,6 @@ import {
   Clock3,
   Code2,
   Copy,
-  Cpu,
-  Database,
   FileText,
   Home,
   Layers3,
@@ -26,7 +24,6 @@ import {
   Menu,
   Monitor,
   Moon,
-  Network,
   Phone,
   Play,
   RotateCcw,
@@ -409,13 +406,14 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
   const selectedUniversity = universityChoices.find((item) => item.name === university)
   const selectedUniversityName = selectedUniversity?.name || ''
   const courseChoices = selectedUniversity?.courses?.length ? selectedUniversity.courses : courses
-  const yearCourses = year ? courseChoices.filter((item) => demoExams[item.title]?.some((exam) => exam.year === year)) : []
+  const yearCourses = year ? courseChoices.filter((item) => demoExams[item.title]?.some((exam) => exam.year === year) || item.materials?.some((material) => material.type === 'QUESTION_BANK')) : []
   const selectedCourseRecord = yearCourses.find((item) => item.title === course)
   const courseMeta = courses.find((item) => item.title === selectedCourseRecord?.title)
   const selectedCourse = selectedCourseRecord
     ? { ...courseMeta, ...selectedCourseRecord, title: selectedCourseRecord.title, category: courseMeta?.category || 'YOUR COURSE', icon: courseMeta?.icon || BookOpen }
     : null
   const uploadedMaterials = selectedCourseRecord?.materials || []
+  const liveExam = uploadedMaterials.find((material) => material.type === 'QUESTION_BANK' && material.questions?.length)
   const hasStudySelection = Boolean(selectedUniversity && year && selectedCourse)
 
   function chooseUniversity(name) {
@@ -487,7 +485,7 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
           </div>}
 
           {tab === 'explore' && <>
-            <DemoExamWorkspace university={selectedUniversityName} year={year} course={selectedCourse?.title || ''} onChoosePath={() => setTab('home')} />
+            <DemoExamWorkspace university={selectedUniversityName} year={year} course={selectedCourse?.title || ''} liveExam={liveExam} onChoosePath={() => setTab('home')} />
           </>}
 
           {tab === 'library' && <>
@@ -564,7 +562,7 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
   )
 }
 
-function DemoExamWorkspace({ university, year, course, onChoosePath }) {
+function DemoExamWorkspace({ university, year, course, liveExam, onChoosePath }) {
   const [duration, setDuration] = useState('10')
   const [running, setRunning] = useState(false)
   const [finished, setFinished] = useState(false)
@@ -574,7 +572,8 @@ function DemoExamWorkspace({ university, year, course, onChoosePath }) {
   const [checked, setChecked] = useState({})
   const [explanationOpen, setExplanationOpen] = useState({})
   const examShellRef = useRef(null)
-  const exam = demoExams[course]?.find((item) => item.year === year)
+  const demoExam = demoExams[course]?.find((item) => item.year === year)
+  const exam = liveExam ? { year, durationMinutes: liveExam.durationMinutes, questions: liveExam.questions.map((question) => ({ ...question, choices: question.options })) } : demoExam
   const score = exam?.questions.reduce((total, item, questionIndex) => total + (checked[questionIndex] && answers[questionIndex] === item.answer ? 1 : 0), 0) || 0
 
   useEffect(() => {
@@ -604,7 +603,7 @@ function DemoExamWorkspace({ university, year, course, onChoosePath }) {
   function startExam() {
     if (!exam?.questions.length) return
     setAnswers({}); setChecked({}); setExplanationOpen({})
-    setRemaining(Number(duration) * 60); setFinished(false); setEndedEarly(false); setRunning(true)
+    setRemaining(Number(liveExam?.durationMinutes || duration) * 60); setFinished(false); setEndedEarly(false); setRunning(true)
     window.setTimeout(() => { if (examShellRef.current?.requestFullscreen) examShellRef.current.requestFullscreen().catch(() => {}) }, 0)
   }
 
@@ -625,11 +624,11 @@ function DemoExamWorkspace({ university, year, course, onChoosePath }) {
   const formattedTime = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`
 
   return <section ref={examShellRef} className={`demo-exam-shell${running ? ' exam-fullscreen' : ''}`}>
-    <div className="demo-exam-heading"><span className="student-overline">FREE PRACTICE · SAMPLE DATA</span><h2>Build your practice exam</h2><p>Practice questions are demonstration content, not official past papers or university exam records.</p></div>
+    <div className="demo-exam-heading"><span className="student-overline">{liveExam ? 'PUBLISHED COURSE EXAM' : 'FREE PRACTICE · SAMPLE DATA'}</span><h2>{liveExam ? liveExam.title : 'Build your practice exam'}</h2><p>{liveExam ? 'Take this timed exam, review your selected answers, and learn from each explanation.' : 'Practice questions are demonstration content, not official past papers or university exam records.'}</p></div>
     {!running && !finished && <>
       {university && year && course ? <>
         <div className="demo-exam-path"><span><UniversityMark name={university} /></span><b>{university}</b><i>{year}</i><b>{course}</b><button type="button" onClick={onChoosePath}>Change study path</button></div>
-        <div className="demo-exam-selectors"><label><span>Time limit</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="20">20 minutes</option></select></label></div>
+        <div className="demo-exam-selectors"><label><span>Time limit</span>{liveExam ? <strong>{liveExam.durationMinutes} minutes</strong> : <select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="20">20 minutes</option></select>}</label></div>
         <div className="demo-exam-start-row"><span><Timer size={15} /> {exam ? `${exam.questions.length} free sample questions · answers explained` : 'No sample exam is available for this course yet'}</span><button type="button" disabled={!exam} onClick={startExam}><Play size={15} /> Start timed exam</button></div>
       </> : <div className="selection-empty-state"><b>Choose a university, year, and course</b><p>Your selected course and year will appear here when your study path is ready.</p><button type="button" onClick={onChoosePath}>Choose study path <ArrowRight size={14} /></button></div>}
     </>}
@@ -848,19 +847,19 @@ function HeroSection() {
       <div className="container hero-grid">
         <div className="hero-copy">
           <div className="hero-kicker"><span className="kicker-mark"><Sparkles size={13} /></span> A better way to prepare</div>
-          <h1>Study smarter.<br />Practice better.<br /><span>Ace your exams.</span></h1>
-          <p className="hero-description">Your university study space, all in one place. Practice timed exams, solve exercises, and access your notes and learning materials without the endless search.</p>
+          <h1>Start strong.<br />Study with purpose.<br /><span>Build your future.</span></h1>
+          <p className="hero-description">The focused study space for Ethiopian freshman students. Find your courses, review clear notes, practice with confidence, and prepare for every assessment in one place.</p>
           <div className="hero-actions">
-            <a className="button button-primary" href="#features">Start practicing <ArrowRight size={17} /></a>
-            <a className="button button-outline" href="#workspace"><span className="play-icon"><Play size={13} fill="currentColor" /></span> Explore study materials</a>
+            <a className="button button-primary" href="#register">Start learning <ArrowRight size={17} /></a>
+            <a className="button button-outline" href="#curriculum"><span className="play-icon"><Play size={13} fill="currentColor" /></span> Explore freshman courses</a>
           </div>
           <div className="hero-trust"><span className="trust-check"><Check size={13} /></span> Built for university students. Designed for focused learning.</div>
         </div>
         <DashboardPreview />
       </div>
       <div className="hero-bottom container">
-        <span>ONE SPACE FOR YOUR STUDIES</span>
-        <div className="hero-bottom-items"><span><BookOpen size={15} /> Course notes</span><i /><span><Timer size={15} /> Timed practice</span><i /><span><Layers3 size={15} /> Organized learning</span></div>
+        <span>YOUR FIRST-YEAR ADVANTAGE</span>
+        <div className="hero-bottom-items"><span><BookOpen size={15} /> Clear course notes</span><i /><span><Timer size={15} /> Exam practice</span><i /><span><Layers3 size={15} /> One study space</span></div>
         <a href="#features" aria-label="Scroll to features"><ArrowDownRight size={17} /></a>
       </div>
     </section>
@@ -974,16 +973,16 @@ function WorkspaceSection() {
     <section className="section workspace-section" id="workspace">
       <div className="container workspace-layout">
         <div className="workspace-copy">
-          <span className="eyebrow">YOUR STUDY DESK, REIMAGINED</span>
-          <h2>Practice exams.<br /><span>Review notes.</span><br />Stay in your flow.</h2>
-          <p>Switch less, learn more. Keep your course materials close while you work through questions and prepare at your own pace.</p>
+          <span className="eyebrow">A CLEARER WAY TO LEARN</span>
+          <h2>Understand the lesson.<br /><span>Practice with purpose.</span><br />Grow in confidence.</h2>
+          <p>Move from lecture notes to practice questions without losing your focus. Sura Study helps you build a steady first-year routine and see what to review next.</p>
           <ul className="check-list">
-            <li><span><Check size={13} /></span> Courses organized by topic and chapter</li>
-            <li><span><Check size={13} /></span> Practice questions next to your notes</li>
-            <li><span><Check size={13} /></span> Progress that helps guide what’s next</li>
+            <li><span><Check size={13} /></span> Freshman subjects organized clearly</li>
+            <li><span><Check size={13} /></span> Questions with helpful explanations</li>
+            <li><span><Check size={13} /></span> Notes and books ready when you need them</li>
           </ul>
           <a className="button button-dark" href="#courses">Explore the platform <ArrowRight size={16} /></a>
-          <div className="workspace-quote"><span className="quote-mark">“</span><span>One focused place to prepare for what matters.</span></div>
+          <div className="workspace-quote"><span className="quote-mark">“</span><span>Small, consistent study sessions create strong foundations.</span></div>
         </div>
         <StudyWorkspacePreview />
       </div>
@@ -991,6 +990,7 @@ function WorkspaceSection() {
   )
 }
 
+// eslint-disable-next-line no-unused-vars
 function DeveloperWorkbenchSection() {
   const problems = [
     {
@@ -1268,21 +1268,21 @@ bool hasCycle(int p, vector<vector<int>>& graph, vector<bool>& vis, vector<bool>
 
 const defaultCurriculumTracks = [
   { id: 'ALL', label: 'All Subjects' },
-  { id: 'SWE', label: 'Software & Systems' },
-  { id: 'ALGO', label: 'Algorithms & Core' },
-  { id: 'NET', label: 'Networks & Cyber' },
-  { id: 'DATA', label: 'Data & Databases' },
+  { id: 'SWE', label: 'Science & Skills' },
+  { id: 'ALGO', label: 'Mathematics' },
+  { id: 'NET', label: 'Language & Society' },
+  { id: 'DATA', label: 'General Education' },
 ]
 
 const defaultCurriculumCourses = [
-  { title: 'Data Structures and Algorithms', track: 'ALGO', category: 'CORE COMPUTER SCIENCE', description: 'Asymptotic complexity, balanced BSTs, graph traversal, shortest path, and dynamic programming.', icon: Workflow, tone: 'course-blue', tags: ['Exit Exam Core', 'Past Midterms', 'Code Sandbox'] },
-  { title: 'Operating Systems & Concurrency', track: 'SWE', category: 'SYSTEM ARCHITECTURE', description: 'Process synchronization, thread models, CPU scheduling, virtual memory paging, and deadlock mitigation.', icon: Cpu, tone: 'course-purple', tags: ['Exit Exam Core', 'Kernel Concepts', 'Lab Guides'] },
-  { title: 'Database Systems & SQL Optimization', track: 'DATA', category: 'DATA ENGINEERING', description: 'Relational algebra, functional dependencies, 1NF–BCNF normalization, indexing, and ACID isolation.', icon: Database, tone: 'course-orange', tags: ['SQL Bank', 'Normalization', 'Past Finals'] },
-  { title: 'Computer Networks & Distributed Protocols', track: 'NET', category: 'NETWORKING', description: 'Layered OSI/TCP-IP architectures, packet routing, transport flow control, and application protocols.', icon: Network, tone: 'course-green', tags: ['Packet Analysis', 'Protocol Guide', 'Past Papers'] },
-  { title: 'Software Engineering & System Design', track: 'SWE', category: 'SOFTWARE ARCHITECTURE', description: 'Clean architecture, design patterns, testing strategies, CI/CD pipelines, and agile delivery.', icon: Workflow, tone: 'course-pink', tags: ['Architecture', 'Testing Bank', 'Exit Exam'] },
-  { title: 'Cybersecurity & Cryptographic Systems', track: 'NET', category: 'INFORMATION SECURITY', description: 'CIA principles, symmetric/asymmetric ciphers, public-key infrastructure, and threat modeling.', icon: ShieldCheck, tone: 'course-blue', tags: ['Crypto Proofs', 'Threat Models', 'Security Lab'] },
-  { title: 'Computer Organization & Architecture', track: 'SWE', category: 'HARDWARE SYSTEMS', description: 'Instruction set architectures, pipelined data paths, memory hierarchies, and cache coherence.', icon: Cpu, tone: 'course-purple', tags: ['RISC-V', 'Pipelining', 'Past Midterms'] },
-  { title: 'Artificial Intelligence & Machine Learning', track: 'DATA', category: 'INTELLIGENT SYSTEMS', description: 'State-space search, heuristic game playing, supervised learning, and neural network foundations.', icon: Sparkles, tone: 'course-orange', tags: ['Search Trees', 'Model Evaluation', 'Exit Exam'] },
+  { title: 'Mathematics I', track: 'ALGO', category: 'FRESHMAN FOUNDATION', description: 'Build confidence with functions, algebra, limits, derivatives, and the mathematical language used across university courses.', icon: Target, tone: 'course-blue', tags: ['Lecture Notes', 'Practice Sets', 'Revision'] },
+  { title: 'Physics I', track: 'SWE', category: 'NATURAL SCIENCES', description: 'Learn motion, forces, energy, momentum, and problem-solving methods through clear explanations and guided practice.', icon: Workflow, tone: 'course-purple', tags: ['Concept Review', 'Worked Examples', 'Exam Prep'] },
+  { title: 'General Chemistry', track: 'DATA', category: 'NATURAL SCIENCES', description: 'Review atomic structure, bonding, reactions, stoichiometry, and the foundations of laboratory science.', icon: Sparkles, tone: 'course-orange', tags: ['Quick Notes', 'Question Bank', 'Study Guide'] },
+  { title: 'Communicative English', track: 'NET', category: 'LANGUAGE & COMMUNICATION', description: 'Strengthen academic reading, writing, listening, vocabulary, and communication for university life.', icon: BookOpen, tone: 'course-green', tags: ['Vocabulary', 'Writing Skills', 'Practice'] },
+  { title: 'Critical Thinking', track: 'SWE', category: 'GENERAL EDUCATION', description: 'Develop reasoning, evidence-based thinking, argument analysis, and confident academic decision-making.', icon: ShieldCheck, tone: 'course-pink', tags: ['Core Skills', 'Short Notes', 'Exercises'] },
+  { title: 'Digital Literacy', track: 'NET', category: 'GENERAL EDUCATION', description: 'Learn the practical digital skills, information literacy, and responsible technology use needed for study.', icon: Monitor, tone: 'course-blue', tags: ['Study Skills', 'Technology', 'Foundations'] },
+  { title: 'Entrepreneurship', track: 'SWE', category: 'GENERAL EDUCATION', description: 'Explore opportunity, creativity, teamwork, and the basics of turning ideas into meaningful solutions.', icon: Workflow, tone: 'course-purple', tags: ['Concepts', 'Case Studies', 'Review'] },
+  { title: 'Civics and Ethical Education', track: 'DATA', category: 'GENERAL EDUCATION', description: 'Engage with citizenship, ethics, rights, responsibilities, and the values that shape university communities.', icon: LibraryBig, tone: 'course-orange', tags: ['Short Notes', 'Discussion', 'Revision'] },
 ]
 
 function CurriculumExplorerSection() {
@@ -1337,13 +1337,13 @@ function CurriculumExplorerSection() {
       <div className="container">
         <div className="curriculum-heading-row">
           <SectionHeading
-            eyebrow="DYNAMIC ACADEMIC HUB"
-            title={<>Dynamic curriculum tracks.<br />All in one workspace.</>}
-            text="Explore comprehensive course syllabi synchronized across universities. Filter by engineering domain, search specific topics, or browse past exam banks."
+            eyebrow="YOUR FIRST-YEAR ACADEMIC HUB"
+            title={<>Everything you need<br />for a confident start.</>}
+            text="Explore freshman subjects, find the right study path, and keep notes, practice questions, and revision resources together from your first week."
           />
           <div className="curriculum-badge-note">
             <Sparkles size={16} />
-            <span>Dynamic Academic Engine — Scalable to unlimited university courses</span>
+            <span>Built for Ethiopian university freshmen</span>
           </div>
         </div>
 
@@ -1353,7 +1353,7 @@ function CurriculumExplorerSection() {
             <Search size={16} />
             <input
               type="search"
-              placeholder="Search courses, algorithms, systems, exit exam topics..."
+              placeholder="Search freshman courses and topics..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search curriculum"
@@ -1877,7 +1877,6 @@ function App() {
         <main>
           <HeroSection />
           <FeaturesSection />
-          <DeveloperWorkbenchSection />
           <CurriculumExplorerSection />
           <WorkspaceSection />
           <CampusNetworkSection />

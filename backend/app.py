@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
@@ -401,10 +402,37 @@ def create_app():
                   'hasFile': bool(material.file_path),
                   'fileName': material.file_name,
                   'fileSize': material.file_size,
+                  'durationMinutes': material.duration_minutes,
+                  'questions': material.questions or [],
                   'createdAt': iso(material.created_at), 'updatedAt': iso(material.updated_at)}
         if chunk_count is not None:
             result['_count'] = {'chunks': chunk_count}
         return result
+
+    def validate_questions(value):
+        if not isinstance(value, list) or not value:
+            return None, 'Add at least one exam question.'
+        normalized = []
+        for index, item in enumerate(value, 1):
+            if not isinstance(item, dict):
+                return None, f'Question {index} is invalid.'
+            prompt = item.get('prompt', '').strip() if isinstance(item.get('prompt'), str) else ''
+            options = item.get('options')
+            explanation = item.get('explanation', '').strip() if isinstance(item.get('explanation'), str) else ''
+            answer = item.get('answer')
+            if not prompt or len(prompt) > 2000:
+                return None, f'Question {index} must have a prompt under 2,000 characters.'
+            if not isinstance(options, list) or not 2 <= len(options) <= 6 or any(
+                not isinstance(option, str) or not option.strip() or len(option.strip()) > 500 for option in options
+            ):
+                return None, f'Question {index} must have between 2 and 6 answer choices.'
+            if not isinstance(answer, int) or answer < 0 or answer >= len(options):
+                return None, f'Question {index} must have one correct answer selected.'
+            if not explanation or len(explanation) > 3000:
+                return None, f'Question {index} needs an explanation under 3,000 characters.'
+            normalized.append({'prompt': prompt, 'options': [option.strip() for option in options],
+                               'answer': answer, 'explanation': explanation})
+        return normalized, None
 
     def subscription_json(subscription):
         if not subscription:
@@ -1043,13 +1071,40 @@ def create_app():
         university_id, course_id, material_type = data.get('universityId'), data.get('courseId'), data.get('type')
         if material_type not in MATERIAL_TYPES:
             return fail('Choose question bank, short note, or full book.', 400)
-        if not title or not 10 <= len(content) <= 500_000:
+        if not title:
+            return fail('Add a title and course content between 10 characters and 500,000 characters.', 400)
+        questions = None
+        duration_minutes = None
+        if material_type == 'QUESTION_BANK':
+            raw_questions = data.get('questions')
+            if isinstance(raw_questions, str):
+                try:
+                    raw_questions = json.loads(raw_questions)
+                except ValueError:
+                    raw_questions = None
+            questions, question_error = validate_questions(raw_questions)
+            if question_error:
+                return fail(question_error, 400)
+            try:
+                duration_minutes = int(data.get('durationMinutes', 30))
+            except (TypeError, ValueError):
+                duration_minutes = 0
+            if not 1 <= duration_minutes <= 240:
+                return fail('Exam time must be between 1 and 240 minutes.', 400)
+            content = '\n\n'.join(
+                f'{index}. {question["prompt"]}\n' + '\n'.join(
+                    f'{choice_index + 1}. {choice}' for choice_index, choice in enumerate(question['options'])
+                ) + f'\nExplanation: {question["explanation"]}'
+                for index, question in enumerate(questions, 1)
+            )
+        if not 10 <= len(content) <= 500_000:
             return fail('Add a title and course content between 10 characters and 500,000 characters.', 400)
         course = db.session.scalar(select(Course).join(University).where(Course.id == course_id, Course.university_id == university_id, University.company_id == COMPANY_ID))
         if not course:
             return fail('Choose a valid course from this company catalog.', 404)
         material = StudyMaterial(company_id=COMPANY_ID, university_id=course.university_id,
-                                 course_id=course.id, title=title, type=material_type, is_published=False)
+                                 course_id=course.id, title=title, type=material_type, is_published=False,
+                                 duration_minutes=duration_minutes, questions=questions)
         material.chunks = [StudyChunk(content=chunk) for chunk in split_content(content)]
         if uploaded_file:
             upload_dir = Path(app.instance_path) / 'uploads'
@@ -1122,6 +1177,18 @@ def create_app():
             if data['type'] not in MATERIAL_TYPES:
                 return fail('Choose question bank, short note, or full book.', 400)
             material.type = data['type']
+        if material.type == 'QUESTION_BANK' and ('questions' in data or 'durationMinutes' in data):
+            questions, question_error = validate_questions(data.get('questions', material.questions))
+            if question_error:
+                return fail(question_error, 400)
+            try:
+                duration_minutes = int(data.get('durationMinutes', material.duration_minutes or 30))
+            except (TypeError, ValueError):
+                duration_minutes = 0
+            if not 1 <= duration_minutes <= 240:
+                return fail('Exam time must be between 1 and 240 minutes.', 400)
+            material.questions = questions
+            material.duration_minutes = duration_minutes
         if isinstance(data.get('content'), str):
             content = data['content'].strip()
             if not 10 <= len(content) <= 500_000:

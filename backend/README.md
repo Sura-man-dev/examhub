@@ -83,12 +83,36 @@ npm run db:seed
 
 ## Run locally
 
+Run the backend before opening the frontend. Vite forwards every `/api` request
+to `http://127.0.0.1:3001`; `ECONNREFUSED 127.0.0.1:3001` means Flask is not
+running on that port.
+
+Terminal 1 — backend:
+
 ```sh
 cd backend
 # Use backend/venv. A repository-level .venv may not contain the backend packages.
 source venv/bin/activate
 python -m pip install -r requirements.txt
 flask --app app run --debug --host 127.0.0.1 --port 3001
+```
+
+Confirm it is ready before starting Vite:
+
+```sh
+curl http://127.0.0.1:3001/api/health
+```
+
+The response should contain `{"status":"ok"}`. If the port is already in use,
+do not start a second Flask process; check the existing process with
+`lsof -i :3001` and use the running server if its health check succeeds.
+
+Terminal 2 — frontend:
+
+```sh
+cd frontend
+npm install
+npm run dev
 ```
 
 If your terminal prompt shows `(.venv)` instead of `(venv)`, deactivate it
@@ -143,7 +167,7 @@ For a local preview, set `DEMO_STUDENT_ENABLED="true"` in `backend/.env`. The lo
 
 ## Admin content
 
-Open `/#admin` and sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Admins can add universities and courses, create question banks, short notes, and books, paste text or upload PDF files, revise content, and publish or unpublish materials. PDF uploads must be text-based, are limited to 25 MB, and are split into searchable excerpts. The original PDF is kept private until the material is published; students can then open it from their course library. Scanned PDFs need OCR before upload.
+Open `/#admin` and sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Admins can add universities and courses, create timed question banks with multiple-choice answers and explanations, create short notes and books, paste text or upload PDF files, revise content, and publish or unpublish materials. Question banks require a time limit from 1 to 240 minutes and at least one explained question. PDF uploads must be text-based, are limited to 25 MB, and are split into searchable excerpts. The original PDF is kept private until the material is published; students can then open it from their course library. Scanned PDFs need OCR before upload.
 
 ## AI behavior
 

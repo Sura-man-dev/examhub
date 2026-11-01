@@ -59,6 +59,8 @@ class StudyMaterial(db.Model):
     file_path = db.Column("filePath", String)
     file_name = db.Column("fileName", String)
     file_size = db.Column("fileSize", Integer)
+    duration_minutes = db.Column("durationMinutes", Integer)
+    questions = db.Column(JSON().with_variant(JSONB, 'postgresql'))
     created_at = db.Column("createdAt", DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column("updatedAt", DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     company = relationship("Company")
