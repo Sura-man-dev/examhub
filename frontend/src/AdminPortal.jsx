@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, BookOpen, BookOpenCheck, Building2, Check, FileText, GraduationCap, LayoutDashboard, LogOut, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react'
 
+const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+const apiUrl = (path) => `${API_URL}${path}`
+
 async function adminRequest(path, options = {}) {
   const isFormData = options.body instanceof FormData
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...options,
-    credentials: 'same-origin',
+    credentials: 'include',
     headers: { ...(options.body && !isFormData ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
   })
   if (response.status === 204) return null
