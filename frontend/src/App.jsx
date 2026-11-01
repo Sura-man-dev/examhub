@@ -46,7 +46,7 @@ import { universities } from './data/universities'
 import AdminPortal from './AdminPortal'
 import './App.css'
 
-const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+const API_URL = (import.meta.env.VITE_API_URL || 'https://examhub-pgz2.onrender.com').replace(/\/+$/, '')
 const apiUrl = (path) => `${API_URL}${path}`
 
 const navigation = [

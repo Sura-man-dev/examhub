@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, BookOpen, BookOpenCheck, Building2, Check, FileText, GraduationCap, LayoutDashboard, LogOut, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react'
 
-const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+const API_URL = (import.meta.env.VITE_API_URL || 'https://examhub-pgz2.onrender.com').replace(/\/+$/, '')
 const apiUrl = (path) => `${API_URL}${path}`
 
 async function adminRequest(path, options = {}) {
