@@ -4,12 +4,15 @@ React 19 and Vite provide the responsive student experience, public landing page
 
 ## Run the complete app
 
-Start Flask in one terminal:
+Start the Flask backend in one terminal. The backend must be running before using
+student login, the AI tutor, payments, or the admin portal:
 
 ```sh
 cd backend
+# Use the backend virtual environment, not a repository-level .venv.
 source venv/bin/activate
-flask --app app run --debug --port 3001
+python -m pip install -r requirements.txt
+flask --app app run --debug --host 127.0.0.1 --port 3001
 ```
 
 Then run the frontend in another terminal:
@@ -21,6 +24,14 @@ npm run dev
 ```
 
 Use the local URL printed by Vite. Backend configuration and database setup are documented in [backend/README.md](../backend/README.md).
+
+## Admin portal
+
+Open `http://localhost:5173/#admin` and sign in with the `ADMIN_EMAIL` and
+`ADMIN_PASSWORD` values configured in `backend/.env`. The portal can add
+universities and courses, create and edit study materials, publish or unpublish
+materials, and review registered students. Never put these credentials in the
+frontend or commit `backend/.env`.
 
 ## Production build
 

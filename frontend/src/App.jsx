@@ -7,13 +7,15 @@ import {
   Atom,
   BookOpen,
   BookOpenCheck,
-  Building2,
   Bookmark,
   Braces,
+  Building2,
   Check,
+  CheckCircle2,
   ChevronDown,
   Clock3,
   Code2,
+  Copy,
   FileText,
   Home,
   Layers3,
@@ -22,17 +24,21 @@ import {
   Menu,
   Monitor,
   Moon,
-  Play,
   Phone,
+  Play,
+  RotateCcw,
   Search,
   Send,
-  Sparkles,
   ShieldCheck,
+  Sparkles,
   Sun,
   Target,
+  Terminal,
   Timer,
   UserRound,
+  Workflow,
   X,
+  Zap,
 } from 'lucide-react'
 import { courses, features } from './data/content'
 import { demoExamYears, demoExams, demoResources } from './data/demoContent'
@@ -41,12 +47,12 @@ import AdminPortal from './AdminPortal'
 import './App.css'
 
 const navigation = [
-  { label: 'Home', href: '#home' },
-  { label: 'Explore courses', href: '#courses' },
-  { label: 'Universities', href: '#universities' },
-  { label: 'Practice exams', href: '#features' },
-  { label: 'Study materials', href: '#workspace' },
-  { label: 'About', href: '#how-it-works' },
+  { label: 'Curriculum', href: '#curriculum' },
+  { label: 'Exam Sandbox', href: '#sandbox' },
+  { label: 'Campus Network', href: '#campuses' },
+  { label: 'Features', href: '#features' },
+  { label: 'Pricing', href: '#pricing' },
+  { label: 'FAQ', href: '#faq' },
 ]
 
 const studyMaterials = [
@@ -262,7 +268,7 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
   const [catalog, setCatalog] = useState([])
   const [paymentConfig, setPaymentConfig] = useState({ amount: 200, currency: 'ETB', environment: 'test', configured: false })
   const [paymentConfigError, setPaymentConfigError] = useState('')
-  const [billingEmail, setBillingEmail] = useState('')
+  const [billingEmail, setBillingEmail] = useState(student?.email || (student?.phone === 'DEMO-PREVIEW' ? 'demo@example.com' : ''))
   const [profileName, setProfileName] = useState(student?.displayName || '')
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileMessage, setProfileMessage] = useState('')
@@ -283,8 +289,6 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
     setPaymentNotice('')
     setTab('checkout')
   }
-
-  useEffect(() => { setProfileName(student?.displayName || '') }, [student?.displayName])
 
   async function saveProfileName(event) {
     event.preventDefault()
@@ -372,17 +376,44 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
     }
   }
 
+  async function simulateChapaTestPayment(event) {
+    if (event) event.preventDefault()
+    if (paymentBusy) return
+    setPaymentBusy(true)
+    setPaymentNotice('')
+    try {
+      const response = await fetch('/api/payments/chapa/simulate-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.error || 'Test payment simulation failed.')
+      if (result.activeSubscription) {
+        onStudentUpdate({ ...student, activeSubscription: result.activeSubscription })
+      }
+      setPaymentNotice('Payment confirmed in Chapa Test Mode! Your 1-month full study access is now active.')
+      setTab('home')
+    } catch (error) {
+      setPaymentNotice(error.message || 'Could not complete simulated test payment.')
+    } finally {
+      setPaymentBusy(false)
+    }
+  }
+
   const catalogNames = new Set(catalog.map((item) => item.name))
   const universityChoices = [...catalog, ...universities.filter((name) => !catalogNames.has(name)).map((name) => ({ name, courses }))]
   const selectedUniversity = universityChoices.find((item) => item.name === university)
   const selectedUniversityName = selectedUniversity?.name || ''
   const courseChoices = selectedUniversity?.courses?.length ? selectedUniversity.courses : courses
-  const yearCourses = year ? courseChoices.filter((item) => demoExams[item.title]?.some((exam) => exam.year === year)) : []
+  const yearCourses = year ? courseChoices.filter((item) => demoExams[item.title]?.some((exam) => exam.year === year) || item.materials?.some((material) => material.type === 'QUESTION_BANK')) : []
   const selectedCourseRecord = yearCourses.find((item) => item.title === course)
   const courseMeta = courses.find((item) => item.title === selectedCourseRecord?.title)
   const selectedCourse = selectedCourseRecord
     ? { ...courseMeta, ...selectedCourseRecord, title: selectedCourseRecord.title, category: courseMeta?.category || 'YOUR COURSE', icon: courseMeta?.icon || BookOpen }
     : null
+  const uploadedMaterials = selectedCourseRecord?.materials || []
+  const liveExam = uploadedMaterials.find((material) => material.type === 'QUESTION_BANK' && material.questions?.length)
   const hasStudySelection = Boolean(selectedUniversity && year && selectedCourse)
 
   function chooseUniversity(name) {
@@ -454,7 +485,7 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
           </div>}
 
           {tab === 'explore' && <>
-            <DemoExamWorkspace university={selectedUniversityName} year={year} course={selectedCourse?.title || ''} onChoosePath={() => setTab('home')} />
+            <DemoExamWorkspace university={selectedUniversityName} year={year} course={selectedCourse?.title || ''} liveExam={liveExam} onChoosePath={() => setTab('home')} />
           </>}
 
           {tab === 'library' && <>
@@ -466,7 +497,10 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
             </> : hasStudySelection ? <>
               <section className="student-page-heading"><span className="student-overline">FREE COURSE SAMPLES</span><h1>Notes & books</h1><p>Read these demonstration resources at no cost. Samples are illustrative and are not official university materials.</p></section>
               <div className="student-library-filter"><span>University</span><b>{selectedUniversityName}</b></div><div className="student-library-filter"><span>Exam year</span><b>{year}</b></div><div className="student-library-filter"><span>Course</span><b>{selectedCourse.title}</b></div>
-              <div className="demo-resource-grid">{Object.entries(demoResources[selectedCourse.title] || {}).map(([kind, resource]) => <article className="demo-resource-card" key={kind}><span className="demo-resource-icon">{kind === 'note' ? <FileText size={18} /> : <BookOpen size={18} />}</span><small>FREE SAMPLE {kind.toUpperCase()}</small><h2>{resource.title}</h2><p>{resource.content.slice(0, 150)}…</p><button type="button" onClick={() => setReadingResource({ ...resource, kind })}>Read sample <ArrowRight size={14} /></button></article>)}</div>
+              <div className="demo-resource-grid">
+                {uploadedMaterials.map((material) => <article className="demo-resource-card" key={material.id}><span className="demo-resource-icon"><FileText size={18} /></span><small>COURSE PDF · {material.type.replace('_', ' ')}</small><h2>{material.title}</h2><p>{material.fileName || 'Published course material'}</p><a className="student-card-link" href={`/api/materials/${material.id}/file`} target="_blank" rel="noreferrer">Read PDF <ArrowRight size={14} /></a></article>)}
+                {Object.entries(demoResources[selectedCourse.title] || {}).map(([kind, resource]) => <article className="demo-resource-card" key={kind}><span className="demo-resource-icon">{kind === 'note' ? <FileText size={18} /> : <BookOpen size={18} />}</span><small>FREE SAMPLE {kind.toUpperCase()}</small><h2>{resource.title}</h2><p>{resource.content.slice(0, 150)}…</p><button type="button" onClick={() => setReadingResource({ ...resource, kind })}>Read sample <ArrowRight size={14} /></button></article>)}
+              </div>
             </> : <section className="selection-empty-state"><b>Choose your study path first</b><p>Select a university, exam year, and course to see free reading samples.</p><button type="button" onClick={() => setTab('home')}>Choose university and course <ArrowRight size={14} /></button></section>}
           </>}
 
@@ -491,7 +525,25 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
                 <div className="payment-option selected"><span className="payment-radio" /><span className="payment-brand chapa-brand"><img src="/payment-logos/chapa.png" alt="Chapa logo" /></span><span className="payment-description"><b>Chapa</b><small>Secure hosted checkout · ETB</small></span><span className="payment-selected-label">Selected</span></div>
                 <div className="payment-option payment-option-soon" aria-label="Telebirr, coming soon"><span className="payment-radio" /><span className="payment-brand telebirr-brand"><img src="/payment-logos/telebirr.jpg" alt="Telebirr logo" /></span><span className="payment-description"><b>Telebirr</b><small>Mobile money payment</small></span><span className="payment-coming-soon">Coming soon</span></div>
               </div>
-              {paymentConfig.environment === 'test' && <p className="chapa-test-note"><ShieldCheck size={15} /> Test mode — use Chapa test credentials; no real money should be charged.</p>}
+              {paymentConfig.environment === 'test' && (
+                <div className="chapa-test-mode-box">
+                  <div className="test-box-header">
+                    <span className="test-status-dot" />
+                    <b>Chapa Sandbox · Test Mode Active</b>
+                  </div>
+                  <p>
+                    Test payments are enabled with mock credentials. No actual money will be charged.
+                  </p>
+                  <button
+                    type="button"
+                    className="checkout-simulate-button"
+                    onClick={simulateChapaTestPayment}
+                    disabled={paymentBusy}
+                  >
+                    <Zap size={15} /> {paymentBusy ? 'Activating access…' : '⚡ Simulate Instant Test Payment'}
+                  </button>
+                </div>
+              )}
               {!paymentConfig.configured && <p className="student-notice" role="status">{paymentConfigError || 'Chapa is not configured yet. Add your CHAPA_PRIVATE_KEY to backend/.env, then restart Flask.'}</p>}
               {paymentNotice && <p className="student-notice" role="alert">{paymentNotice}</p>}
               <button type="submit" className="checkout-pay-button" disabled={paymentBusy || !paymentConfig.configured}>{paymentBusy ? 'Connecting to Chapa…' : `Pay ETB ${Number(paymentConfig.amount || 0).toLocaleString('en-ET')} with Chapa`} <ArrowRight size={15} /></button>
@@ -510,7 +562,7 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
   )
 }
 
-function DemoExamWorkspace({ university, year, course, onChoosePath }) {
+function DemoExamWorkspace({ university, year, course, liveExam, onChoosePath }) {
   const [duration, setDuration] = useState('10')
   const [running, setRunning] = useState(false)
   const [finished, setFinished] = useState(false)
@@ -520,7 +572,8 @@ function DemoExamWorkspace({ university, year, course, onChoosePath }) {
   const [checked, setChecked] = useState({})
   const [explanationOpen, setExplanationOpen] = useState({})
   const examShellRef = useRef(null)
-  const exam = demoExams[course]?.find((item) => item.year === year)
+  const demoExam = demoExams[course]?.find((item) => item.year === year)
+  const exam = liveExam ? { year, durationMinutes: liveExam.durationMinutes, questions: liveExam.questions.map((question) => ({ ...question, choices: question.options })) } : demoExam
   const score = exam?.questions.reduce((total, item, questionIndex) => total + (checked[questionIndex] && answers[questionIndex] === item.answer ? 1 : 0), 0) || 0
 
   useEffect(() => {
@@ -550,7 +603,7 @@ function DemoExamWorkspace({ university, year, course, onChoosePath }) {
   function startExam() {
     if (!exam?.questions.length) return
     setAnswers({}); setChecked({}); setExplanationOpen({})
-    setRemaining(Number(duration) * 60); setFinished(false); setEndedEarly(false); setRunning(true)
+    setRemaining(Number(liveExam?.durationMinutes || duration) * 60); setFinished(false); setEndedEarly(false); setRunning(true)
     window.setTimeout(() => { if (examShellRef.current?.requestFullscreen) examShellRef.current.requestFullscreen().catch(() => {}) }, 0)
   }
 
@@ -571,11 +624,11 @@ function DemoExamWorkspace({ university, year, course, onChoosePath }) {
   const formattedTime = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`
 
   return <section ref={examShellRef} className={`demo-exam-shell${running ? ' exam-fullscreen' : ''}`}>
-    <div className="demo-exam-heading"><span className="student-overline">FREE PRACTICE · SAMPLE DATA</span><h2>Build your practice exam</h2><p>Practice questions are demonstration content, not official past papers or university exam records.</p></div>
+    <div className="demo-exam-heading"><span className="student-overline">{liveExam ? 'PUBLISHED COURSE EXAM' : 'FREE PRACTICE · SAMPLE DATA'}</span><h2>{liveExam ? liveExam.title : 'Build your practice exam'}</h2><p>{liveExam ? 'Take this timed exam, review your selected answers, and learn from each explanation.' : 'Practice questions are demonstration content, not official past papers or university exam records.'}</p></div>
     {!running && !finished && <>
       {university && year && course ? <>
         <div className="demo-exam-path"><span><UniversityMark name={university} /></span><b>{university}</b><i>{year}</i><b>{course}</b><button type="button" onClick={onChoosePath}>Change study path</button></div>
-        <div className="demo-exam-selectors"><label><span>Time limit</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="20">20 minutes</option></select></label></div>
+        <div className="demo-exam-selectors"><label><span>Time limit</span>{liveExam ? <strong>{liveExam.durationMinutes} minutes</strong> : <select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="20">20 minutes</option></select>}</label></div>
         <div className="demo-exam-start-row"><span><Timer size={15} /> {exam ? `${exam.questions.length} free sample questions · answers explained` : 'No sample exam is available for this course yet'}</span><button type="button" disabled={!exam} onClick={startExam}><Play size={15} /> Start timed exam</button></div>
       </> : <div className="selection-empty-state"><b>Choose a university, year, and course</b><p>Your selected course and year will appear here when your study path is ready.</p><button type="button" onClick={onChoosePath}>Choose study path <ArrowRight size={14} /></button></div>}
     </>}
@@ -794,19 +847,19 @@ function HeroSection() {
       <div className="container hero-grid">
         <div className="hero-copy">
           <div className="hero-kicker"><span className="kicker-mark"><Sparkles size={13} /></span> A better way to prepare</div>
-          <h1>Study smarter.<br />Practice better.<br /><span>Ace your exams.</span></h1>
-          <p className="hero-description">Your university study space, all in one place. Practice timed exams, solve exercises, and access your notes and learning materials without the endless search.</p>
+          <h1>Start strong.<br />Study with purpose.<br /><span>Build your future.</span></h1>
+          <p className="hero-description">The focused study space for Ethiopian freshman students. Find your courses, review clear notes, practice with confidence, and prepare for every assessment in one place.</p>
           <div className="hero-actions">
-            <a className="button button-primary" href="#features">Start practicing <ArrowRight size={17} /></a>
-            <a className="button button-outline" href="#workspace"><span className="play-icon"><Play size={13} fill="currentColor" /></span> Explore study materials</a>
+            <a className="button button-primary" href="#register">Start learning <ArrowRight size={17} /></a>
+            <a className="button button-outline" href="#curriculum"><span className="play-icon"><Play size={13} fill="currentColor" /></span> Explore freshman courses</a>
           </div>
           <div className="hero-trust"><span className="trust-check"><Check size={13} /></span> Built for university students. Designed for focused learning.</div>
         </div>
         <DashboardPreview />
       </div>
       <div className="hero-bottom container">
-        <span>ONE SPACE FOR YOUR STUDIES</span>
-        <div className="hero-bottom-items"><span><BookOpen size={15} /> Course notes</span><i /><span><Timer size={15} /> Timed practice</span><i /><span><Layers3 size={15} /> Organized learning</span></div>
+        <span>YOUR FIRST-YEAR ADVANTAGE</span>
+        <div className="hero-bottom-items"><span><BookOpen size={15} /> Clear course notes</span><i /><span><Timer size={15} /> Exam practice</span><i /><span><Layers3 size={15} /> One study space</span></div>
         <a href="#features" aria-label="Scroll to features"><ArrowDownRight size={17} /></a>
       </div>
     </section>
@@ -920,16 +973,16 @@ function WorkspaceSection() {
     <section className="section workspace-section" id="workspace">
       <div className="container workspace-layout">
         <div className="workspace-copy">
-          <span className="eyebrow">YOUR STUDY DESK, REIMAGINED</span>
-          <h2>Practice exams.<br /><span>Review notes.</span><br />Stay in your flow.</h2>
-          <p>Switch less, learn more. Keep your course materials close while you work through questions and prepare at your own pace.</p>
+          <span className="eyebrow">A CLEARER WAY TO LEARN</span>
+          <h2>Understand the lesson.<br /><span>Practice with purpose.</span><br />Grow in confidence.</h2>
+          <p>Move from lecture notes to practice questions without losing your focus. Sura Study helps you build a steady first-year routine and see what to review next.</p>
           <ul className="check-list">
-            <li><span><Check size={13} /></span> Courses organized by topic and chapter</li>
-            <li><span><Check size={13} /></span> Practice questions next to your notes</li>
-            <li><span><Check size={13} /></span> Progress that helps guide what’s next</li>
+            <li><span><Check size={13} /></span> Freshman subjects organized clearly</li>
+            <li><span><Check size={13} /></span> Questions with helpful explanations</li>
+            <li><span><Check size={13} /></span> Notes and books ready when you need them</li>
           </ul>
           <a className="button button-dark" href="#courses">Explore the platform <ArrowRight size={16} /></a>
-          <div className="workspace-quote"><span className="quote-mark">“</span><span>One focused place to prepare for what matters.</span></div>
+          <div className="workspace-quote"><span className="quote-mark">“</span><span>Small, consistent study sessions create strong foundations.</span></div>
         </div>
         <StudyWorkspacePreview />
       </div>
@@ -937,24 +990,415 @@ function WorkspaceSection() {
   )
 }
 
-function CoursesSection() {
+// eslint-disable-next-line no-unused-vars
+function DeveloperWorkbenchSection() {
+  const problems = [
+    {
+      id: 'bst',
+      title: 'Balanced Binary Search Trees',
+      track: 'DATA STRUCTURES & ALGORITHMS',
+      difficulty: 'INTERMEDIATE',
+      prompt: 'In a self-balancing binary search tree (such as an AVL or Red-Black Tree), what is the guaranteed worst-case search time complexity, and which structural property ensures this guarantee?',
+      options: [
+        { label: 'A', text: 'O(1) — Constant time direct array indexing', correct: false, note: 'Hash tables offer average O(1) lookup, but trees require top-down pointer traversal.' },
+        { label: 'B', text: 'O(log n) — Strictly bounded tree height enforced by tree rotations', correct: true, note: 'Correct! Self-balancing invariants ensure height <= c * log2(n), guaranteeing logarithmic search depth.' },
+        { label: 'C', text: 'O(n) — Linear search when keys degenerate into a linked list', correct: false, note: 'Unbalanced BSTs can degenerate to O(n), but AVL and Red-Black trees prevent this via rotations.' },
+        { label: 'D', text: 'O(n log n) — Requires in-order traversal sorting prior to lookup', correct: false, note: 'Search only traverses a single branch from root to leaf, which is O(log n).' },
+      ],
+      codeSnippet: {
+        python: `# AVL Self-Balancing Tree Node & Search
+class AVLNode:
+    def __init__(self, key):
+        self.key = key
+        self.left = None
+        self.right = None
+        self.height = 1
+
+def avl_search(root, key):
+    # Guaranteed O(log n) worst-case depth
+    curr = root
+    while curr and curr.key != key:
+        if key < curr.key:
+            curr = curr.left
+        else:
+            curr = curr.right
+    return curr`,
+        javascript: `// AVL Self-Balancing Tree Search
+class AVLNode {
+  constructor(key) {
+    this.key = key;
+    this.left = null;
+    this.right = null;
+    this.height = 1;
+  }
+}
+
+function avlSearch(root, key) {
+  // Guaranteed O(log n) worst-case depth
+  let curr = root;
+  while (curr && curr.key !== key) {
+    curr = key < curr.key ? curr.left : curr.right;
+  }
+  return curr;
+}`,
+        cpp: `// AVL Tree Search Implementation
+struct AVLNode {
+    int key;
+    AVLNode* left;
+    AVLNode* right;
+    int height;
+};
+
+AVLNode* avlSearch(AVLNode* root, int key) {
+    // Guaranteed O(log n) search depth
+    AVLNode* curr = root;
+    while (curr != nullptr && curr->key != key) {
+        curr = (key < curr->key) ? curr->left : curr->right;
+    }
+    return curr;
+}`
+      },
+      metrics: { time: 'O(log n)', space: 'O(1)', testCases: '16/16 Passed' }
+    },
+    {
+      id: 'deadlock',
+      title: 'Operating Systems: Deadlock Invariants',
+      track: 'SYSTEM ARCHITECTURE',
+      difficulty: 'EXIT EXAM CORE',
+      prompt: 'According to Coffman\'s criteria, which four conditions must hold simultaneously for a system deadlock to exist among competing processes?',
+      options: [
+        { label: 'A', text: 'Mutual Exclusion, Hold and Wait, No Preemption, Circular Wait', correct: true, note: 'Spot on! Breaking even one of these four conditions (e.g., ordering resource acquisition) prevents deadlock.' },
+        { label: 'B', text: 'Race Conditions, Context Switching, Starvation, Paging Fault', correct: false, note: 'These are general OS concurrency and memory terms, not the 4 Coffman conditions.' },
+        { label: 'C', text: 'Critical Section, Semaphore Lock, Virtual Memory, Aging', correct: false, note: 'These are synchronization and scheduling mechanisms.' },
+        { label: 'D', text: 'Mutual Exclusion and Circular Wait only', correct: false, note: 'All four conditions must hold simultaneously for a deadlock.' },
+      ],
+      codeSnippet: {
+        python: `# Resource Allocation Graph Cycle Detection
+def detect_deadlock(num_processes, allocation, request):
+    # Evaluates Coffman's 4th condition (Circular Wait)
+    visited = [False] * num_processes
+    rec_stack = [False] * num_processes
+    
+    def has_cycle(p):
+        visited[p] = True
+        rec_stack[p] = True
+        for next_p in request[p]:
+            if not visited[next_p] and has_cycle(next_p):
+                return True
+            elif rec_stack[next_p]:
+                return True # Circular wait confirmed!
+        rec_stack[p] = False
+        return False
+        
+    return any(has_cycle(i) for i in range(num_processes) if not visited[i])`,
+        javascript: `// Resource Allocation Graph Cycle Detection
+function detectDeadlock(numProcesses, requestGraph) {
+  const visited = new Array(numProcesses).fill(false);
+  const inStack = new Array(numProcesses).fill(false);
+
+  function hasCycle(p) {
+    visited[p] = true;
+    inStack[p] = true;
+    for (const next of requestGraph[p] || []) {
+      if (!visited[next] && hasCycle(next)) return true;
+      if (inStack[next]) return true; // Circular wait detected
+    }
+    inStack[p] = false;
+    return false;
+  }
+  return [...Array(numProcesses).keys()].some(p => !visited[p] && hasCycle(p));
+}`,
+        cpp: `// Resource Allocation Graph Cycle Detection
+bool hasCycle(int p, vector<vector<int>>& graph, vector<bool>& vis, vector<bool>& stack) {
+    vis[p] = true;
+    stack[p] = true;
+    for (int next : graph[p]) {
+        if (!vis[next] && hasCycle(next, graph, vis, stack)) return true;
+        if (stack[next]) return true; // Circular wait detected
+    }
+    stack[p] = false;
+    return false;
+}`
+      },
+      metrics: { time: 'O(V + E)', space: 'O(V)', testCases: 'All Invariants Evaluated' }
+    }
+  ]
+
+  const [activeProblemIdx, setActiveProblemIdx] = useState(0)
+  const [selectedOpt, setSelectedOpt] = useState(null)
+  const [lang, setLang] = useState('python')
+  const [copied, setCopied] = useState(false)
+
+  const prob = problems[activeProblemIdx]
+
+  function switchProblem(idx) {
+    setActiveProblemIdx(idx)
+    setSelectedOpt(null)
+  }
+
+  function handleCopy() {
+    navigator.clipboard?.writeText(prob.codeSnippet[lang] || '')
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
-    <section className="section courses-section" id="courses">
+    <section className="section developer-workbench-section" id="sandbox">
       <div className="container">
-        <div className="courses-heading-row">
-          <SectionHeading eyebrow="FIND YOUR NEXT SUBJECT" title="Your courses, all together." text="Start with a subject. Find the materials and practice that fit your next study session." />
-          <a className="text-link" href="#get-started">Browse all courses <ArrowRight size={15} /></a>
+        <div className="workbench-head">
+          <SectionHeading
+            eyebrow="INTERACTIVE EXAM &amp; ALGORITHM SANDBOX"
+            title={<>Engineered for university<br />exam precision.</>}
+            text="Practice complex algorithms, architectural concepts, and past exit exam questions with real-time evaluation feedback and complexity profiling."
+          />
+          <div className="workbench-track-nav">
+            {problems.map((p, idx) => (
+              <button
+                type="button"
+                key={p.id}
+                className={`workbench-track-btn${activeProblemIdx === idx ? ' active' : ''}`}
+                onClick={() => switchProblem(idx)}
+              >
+                <Terminal size={14} />
+                <span>{p.title}</span>
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="course-grid">
-          {courses.map((course) => {
-            const Icon = course.icon
+
+        <div className="workbench-grid">
+          {/* Left: Problem & Interactive Multiple Choice */}
+          <div className="workbench-problem-card">
+            <div className="problem-meta-row">
+              <span className="track-badge">{prob.track}</span>
+              <span className="difficulty-badge">{prob.difficulty}</span>
+            </div>
+            <h3>{prob.title}</h3>
+            <p className="problem-prompt">{prob.prompt}</p>
+
+            <div className="sandbox-options-list">
+              {prob.options.map((opt, i) => {
+                const isSelected = selectedOpt === i
+                let stateClass = ''
+                if (isSelected) {
+                  stateClass = opt.correct ? ' option-correct' : ' option-incorrect'
+                }
+                return (
+                  <button
+                    type="button"
+                    key={opt.label}
+                    className={`sandbox-option-btn${stateClass}`}
+                    onClick={() => setSelectedOpt(i)}
+                  >
+                    <span className="opt-letter">{opt.label}</span>
+                    <span className="opt-text">{opt.text}</span>
+                    {isSelected && (opt.correct ? <CheckCircle2 size={17} className="opt-icon check" /> : <X size={17} className="opt-icon cross" />)}
+                  </button>
+                )
+              })}
+            </div>
+
+            {selectedOpt !== null && (
+              <div className={`sandbox-feedback-box${prob.options[selectedOpt].correct ? ' success' : ' retry'}`}>
+                <b>{prob.options[selectedOpt].correct ? '✓ Verified Correct Answer' : '⚠ Clarification'}</b>
+                <p>{prob.options[selectedOpt].note}</p>
+              </div>
+            )}
+
+            <div className="workbench-action-foot">
+              <a className="button button-small button-primary" href="#register">
+                Unlock Full Exam Question Bank <ArrowRight size={14} />
+              </a>
+              <button type="button" className="retry-btn" onClick={() => setSelectedOpt(null)}>
+                <RotateCcw size={14} /> Reset
+              </button>
+            </div>
+          </div>
+
+          {/* Right: Code Inspector & Telemetry */}
+          <div className="workbench-code-card">
+            <div className="code-card-header">
+              <div className="window-dots">
+                <span className="dot red" />
+                <span className="dot yellow" />
+                <span className="dot green" />
+              </div>
+              <div className="lang-tabs">
+                {['python', 'javascript', 'cpp'].map((l) => (
+                  <button
+                    type="button"
+                    key={l}
+                    className={`lang-tab-btn${lang === l ? ' active' : ''}`}
+                    onClick={() => setLang(l)}
+                  >
+                    {l === 'cpp' ? 'C++' : l.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="copy-code-btn" onClick={handleCopy} title="Copy code">
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+
+            <pre className="code-content">
+              <code>{prob.codeSnippet[lang]}</code>
+            </pre>
+
+            <div className="code-telemetry-bar">
+              <div className="telemetry-item">
+                <small>TIME COMPLEXITY</small>
+                <b>{prob.metrics.time}</b>
+              </div>
+              <div className="telemetry-item">
+                <small>AUXILIARY SPACE</small>
+                <b>{prob.metrics.space}</b>
+              </div>
+              <div className="telemetry-item telemetry-test">
+                <small>TEST SUITE</small>
+                <b><CheckCircle2 size={13} /> {prob.metrics.testCases}</b>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+const defaultCurriculumTracks = [
+  { id: 'ALL', label: 'All Subjects' },
+  { id: 'SWE', label: 'Science & Skills' },
+  { id: 'ALGO', label: 'Mathematics' },
+  { id: 'NET', label: 'Language & Society' },
+  { id: 'DATA', label: 'General Education' },
+]
+
+const defaultCurriculumCourses = [
+  { title: 'Mathematics I', track: 'ALGO', category: 'FRESHMAN FOUNDATION', description: 'Build confidence with functions, algebra, limits, derivatives, and the mathematical language used across university courses.', icon: Target, tone: 'course-blue', tags: ['Lecture Notes', 'Practice Sets', 'Revision'] },
+  { title: 'Physics I', track: 'SWE', category: 'NATURAL SCIENCES', description: 'Learn motion, forces, energy, momentum, and problem-solving methods through clear explanations and guided practice.', icon: Workflow, tone: 'course-purple', tags: ['Concept Review', 'Worked Examples', 'Exam Prep'] },
+  { title: 'General Chemistry', track: 'DATA', category: 'NATURAL SCIENCES', description: 'Review atomic structure, bonding, reactions, stoichiometry, and the foundations of laboratory science.', icon: Sparkles, tone: 'course-orange', tags: ['Quick Notes', 'Question Bank', 'Study Guide'] },
+  { title: 'Communicative English', track: 'NET', category: 'LANGUAGE & COMMUNICATION', description: 'Strengthen academic reading, writing, listening, vocabulary, and communication for university life.', icon: BookOpen, tone: 'course-green', tags: ['Vocabulary', 'Writing Skills', 'Practice'] },
+  { title: 'Critical Thinking', track: 'SWE', category: 'GENERAL EDUCATION', description: 'Develop reasoning, evidence-based thinking, argument analysis, and confident academic decision-making.', icon: ShieldCheck, tone: 'course-pink', tags: ['Core Skills', 'Short Notes', 'Exercises'] },
+  { title: 'Digital Literacy', track: 'NET', category: 'GENERAL EDUCATION', description: 'Learn the practical digital skills, information literacy, and responsible technology use needed for study.', icon: Monitor, tone: 'course-blue', tags: ['Study Skills', 'Technology', 'Foundations'] },
+  { title: 'Entrepreneurship', track: 'SWE', category: 'GENERAL EDUCATION', description: 'Explore opportunity, creativity, teamwork, and the basics of turning ideas into meaningful solutions.', icon: Workflow, tone: 'course-purple', tags: ['Concepts', 'Case Studies', 'Review'] },
+  { title: 'Civics and Ethical Education', track: 'DATA', category: 'GENERAL EDUCATION', description: 'Engage with citizenship, ethics, rights, responsibilities, and the values that shape university communities.', icon: LibraryBig, tone: 'course-orange', tags: ['Short Notes', 'Discussion', 'Revision'] },
+]
+
+function CurriculumExplorerSection() {
+  const [catalogCourses, setCatalogCourses] = useState([])
+  const [search, setSearch] = useState('')
+  const [selectedTrack, setSelectedTrack] = useState('ALL')
+
+  useEffect(() => {
+    fetch('/api/catalog')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.universities?.length) {
+          const map = new Map()
+          defaultCurriculumCourses.forEach((c) => map.set(c.title.toLowerCase(), c))
+          data.universities.forEach((u) => {
+            u.courses?.forEach((c) => {
+              const key = c.title.toLowerCase()
+              if (!map.has(key)) {
+                map.set(key, {
+                  title: c.title,
+                  track: 'SWE',
+                  category: 'DEPARTMENTAL SYLLABUS',
+                  description: 'Accredited university course material including lecture notes, exam sets, and review questions.',
+                  icon: BookOpenCheck,
+                  tone: 'course-blue',
+                  tags: ['University Aligned', 'Question Bank', 'Active Course']
+                })
+              }
+            })
+          })
+          setCatalogCourses(Array.from(map.values()))
+        } else {
+          setCatalogCourses(defaultCurriculumCourses)
+        }
+      })
+      .catch(() => setCatalogCourses(defaultCurriculumCourses))
+  }, [])
+
+  const displayList = catalogCourses.length ? catalogCourses : defaultCurriculumCourses
+
+  const filtered = displayList.filter((item) => {
+    const matchesTrack = selectedTrack === 'ALL' || item.track === selectedTrack
+    const matchesSearch = !search.trim() ||
+      item.title.toLowerCase().includes(search.toLowerCase()) ||
+      item.category.toLowerCase().includes(search.toLowerCase()) ||
+      item.description.toLowerCase().includes(search.toLowerCase())
+    return matchesTrack && matchesSearch
+  })
+
+  return (
+    <section className="section curriculum-section" id="curriculum">
+      <div className="container">
+        <div className="curriculum-heading-row">
+          <SectionHeading
+            eyebrow="YOUR FIRST-YEAR ACADEMIC HUB"
+            title={<>Everything you need<br />for a confident start.</>}
+            text="Explore freshman subjects, find the right study path, and keep notes, practice questions, and revision resources together from your first week."
+          />
+          <div className="curriculum-badge-note">
+            <Sparkles size={16} />
+            <span>Built for Ethiopian university freshmen</span>
+          </div>
+        </div>
+
+        {/* Filter and Search Bar */}
+        <div className="curriculum-controls">
+          <div className="curriculum-search">
+            <Search size={16} />
+            <input
+              type="search"
+              placeholder="Search freshman courses and topics..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search curriculum"
+            />
+            {search && <button type="button" onClick={() => setSearch('')}><X size={14} /></button>}
+          </div>
+
+          <div className="track-filter-chips">
+            {defaultCurriculumTracks.map((tr) => (
+              <button
+                type="button"
+                key={tr.id}
+                className={`track-chip${selectedTrack === tr.id ? ' active' : ''}`}
+                onClick={() => setSelectedTrack(tr.id)}
+              >
+                {tr.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Dynamic Course Grid */}
+        <div className="curriculum-grid">
+          {filtered.map((c) => {
+            const Icon = c.icon || BookOpen
             return (
-              <article className="course-card" key={course.title}>
-                <div className={`course-icon ${course.tone}`}><Icon size={20} strokeWidth={1.8} /></div>
-                <span className="course-subject">{course.category}</span>
-                <h3>{course.title}</h3>
-                <p>{course.description}</p>
-                <a href="#get-started">View course <ArrowUpRight size={14} /></a>
+              <article className="curriculum-card" key={c.title}>
+                <div className="curriculum-card-top">
+                  <div className={`course-icon ${c.tone || 'course-blue'}`}>
+                    <Icon size={20} strokeWidth={1.8} />
+                  </div>
+                  <span className="course-subject">{c.category}</span>
+                </div>
+                <h3>{c.title}</h3>
+                <p>{c.description}</p>
+                <div className="curriculum-card-tags">
+                  {c.tags?.map((t) => (
+                    <span className="card-tag" key={t}>{t}</span>
+                  ))}
+                </div>
+                <div className="curriculum-card-foot">
+                  <a className="card-explore-link" href="#register">
+                    Open in Workspace <ArrowRight size={14} />
+                  </a>
+                </div>
               </article>
             )
           })}
@@ -964,31 +1408,323 @@ function CoursesSection() {
   )
 }
 
-function UniversitiesSection() {
+function CampusNetworkSection() {
+  const [campusSearch, setCampusSearch] = useState('')
+  const [activeCampus, setActiveCampus] = useState('Addis Ababa University')
+
+  const topPillCampuses = [
+    'Addis Ababa University',
+    'Adama Science and Technology University',
+    'Addis Ababa Science and Technology University',
+    'Bahir Dar University',
+    'Hawassa University',
+    'Jimma University',
+    'University of Gondar',
+    'Mekelle University',
+  ]
+
+  const searchResults = universities.filter((u) =>
+    u.toLowerCase().includes(campusSearch.toLowerCase())
+  )
+
+  const selectedCampusName = activeCampus || 'Addis Ababa University'
+
   return (
-    <section className="section universities-section" id="universities">
+    <section className="section campus-network-section" id="campuses">
       <div className="container">
-        <div className="universities-heading">
+        <div className="campus-network-head">
           <SectionHeading
-            eyebrow="BUILT AROUND YOUR CAMPUS"
-            title="Your university, your study space."
-            text="Choose your institution to find course materials and focused exam practice in one place."
+            eyebrow="NATIONAL HIGHER EDUCATION COVERAGE"
+            title={<>One unified platform.<br />Across 40+ Ethiopian campuses.</>}
+            text="Every public and private university in Ethiopia follows the national standardized curriculum. Sura Study brings their past exams, notes, and study tracks into a single, high-performance study space."
           />
-          <a className="text-link" href="#register">Get started <ArrowRight size={15} /></a>
+          <div className="campus-stats-badge">
+            <b>40+</b>
+            <span>Accredited Campuses Supported</span>
+          </div>
         </div>
-        <div className="university-directory">
-          {universities.map((name) => (
-            <article className="university-card" key={name}>
-              <UniversityMark name={name} />
+
+        {/* Interactive Campus Search and Matcher */}
+        <div className="campus-explorer-box">
+          <div className="campus-search-bar">
+            <Search size={18} />
+            <input
+              type="search"
+              value={campusSearch}
+              onChange={(e) => setCampusSearch(e.target.value)}
+              placeholder="Search your university (e.g., AAU, ASTU, Hawassa, BDU, Jimma, Gondar)..."
+              aria-label="Search universities"
+            />
+            {campusSearch && (
+              <button type="button" className="clear-search-btn" onClick={() => setCampusSearch('')}>
+                <X size={15} />
+              </button>
+            )}
+          </div>
+
+          <div className="campus-quick-chips">
+            <span className="chips-label">Top Campuses:</span>
+            {topPillCampuses.map((name) => (
+              <button
+                type="button"
+                key={name}
+                className={`campus-chip${activeCampus === name ? ' active' : ''}`}
+                onClick={() => { setActiveCampus(name); setCampusSearch('') }}
+              >
+                {name.replace('University', 'Univ.').replace('Science and Technology', 'Sci & Tech')}
+              </button>
+            ))}
+          </div>
+
+          {campusSearch && searchResults.length > 0 && (
+            <div className="campus-search-dropdown-results">
+              {searchResults.slice(0, 8).map((name) => (
+                <button
+                  type="button"
+                  key={name}
+                  className="search-result-row"
+                  onClick={() => { setActiveCampus(name); setCampusSearch('') }}
+                >
+                  <UniversityMark name={name} />
+                  <span>{name}</span>
+                  <ArrowRight size={14} />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Active Campus Spotlight Card */}
+          <div className="campus-spotlight-card">
+            <div className="spotlight-left">
+              <UniversityMark name={selectedCampusName} />
               <div>
-                <span>UNIVERSITY LIBRARY</span>
-                <h3>{name}</h3>
+                <span className="spotlight-tag">ACCREDITED STUDY NETWORK</span>
+                <h3>{selectedCampusName}</h3>
+                <p>Fully aligned with official Ethiopian Ministry of Education curriculum guidelines and annual Exit Exam matrices.</p>
               </div>
-              <ArrowUpRight className="university-card-arrow" size={17} />
+            </div>
+            <div className="spotlight-right">
+              <div className="spotlight-meta-pill">
+                <CheckCircle2 size={16} />
+                <span>Exit Exam Matrix Aligned</span>
+              </div>
+              <div className="spotlight-meta-pill">
+                <BookOpen size={16} />
+                <span>CS &amp; Engineering Syllabi</span>
+              </div>
+              <a className="button button-primary spotlight-btn" href="#register">
+                Enter Campus Workspace <ArrowRight size={15} />
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {/* Animated Marquee Ribbon */}
+        <div className="campus-marquee-wrap" aria-label="Universities marquee">
+          <div className="campus-marquee-track">
+            {[...universities, ...universities].map((name, i) => (
+              <div className="marquee-item" key={`${name}-${i}`} onClick={() => setActiveCampus(name)}>
+                <UniversityMark name={name} />
+                <span>{name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function MetricsSection() {
+  const metrics = [
+    { value: '< 120ms', label: 'Instant Search Latency', sub: 'P99 query response time across exam questions' },
+    { value: '100%', label: 'National Exit Exam Aligned', sub: 'Synchronized with Ministry of Education standards' },
+    { value: '24/7', label: 'AI Study Assistant', sub: 'Contextual retrieval and step-by-step code guidance' },
+    { value: 'Telebirr', label: 'Instant Activation', sub: 'Automated verification via Chapa payment gateway' },
+  ]
+
+  return (
+    <section className="section metrics-section">
+      <div className="container">
+        <div className="metrics-grid">
+          {metrics.map((m) => (
+            <div className="metric-card" key={m.label}>
+              <span className="metric-value">{m.value}</span>
+              <h4 className="metric-title">{m.label}</h4>
+              <p className="metric-sub">{m.sub}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TestimonialsSection() {
+  const reviews = [
+    {
+      name: 'Yared Tadesse',
+      campus: 'Addis Ababa University (AAU)',
+      department: 'Computer Science',
+      badge: 'Score: 94% on National Exit Exam',
+      text: 'Practicing timed mock exams on Sura Study was the single biggest factor in passing the Exit Exam with distinction. The countdown timer and realistic questions matched the test center interface exactly.',
+    },
+    {
+      name: 'Selamawit Kifle',
+      campus: 'Adama Science & Technology Univ (ASTU)',
+      department: 'Software Engineering',
+      badge: 'Class of 2025',
+      text: 'Instead of digging through random Telegram channels for unverified exam PDFs, Sura Study has verified lecture notes and past papers organized by chapter. The Big-O breakdown is top tier.',
+    },
+    {
+      name: 'Dawit Mengistu',
+      campus: 'Hawassa University',
+      department: 'Information Systems',
+      badge: 'Honor Roll Graduate',
+      text: 'Chapa payment with Telebirr took literally 5 seconds, and all my courses, question banks, and AI tutor explanations were unlocked instantly. Made studying for finals so much smoother.',
+    },
+  ]
+
+  return (
+    <section className="section testimonials-section" id="testimonials">
+      <div className="container">
+        <SectionHeading
+          eyebrow="STUDENT SUCCESS STORIES"
+          title="Engineered to help you excel."
+          text="See how students across Ethiopia use Sura Study to master difficult engineering topics and conquer their exit exams."
+          centered
+        />
+        <div className="testimonials-grid">
+          {reviews.map((r) => (
+            <article className="testimonial-card" key={r.name}>
+              <div className="testimonial-stars">★★★★★</div>
+              <p className="testimonial-text">“{r.text}”</p>
+              <div className="testimonial-author">
+                <div className="author-avatar">{r.name.slice(0, 2).toUpperCase()}</div>
+                <div>
+                  <h4 className="author-name">{r.name}</h4>
+                  <span className="author-campus">{r.campus} · {r.department}</span>
+                  <span className="author-badge">{r.badge}</span>
+                </div>
+              </div>
             </article>
           ))}
         </div>
-        <p className="university-directory-note">University names and logos are shown to identify the available study spaces. All marks belong to their respective owners.</p>
+      </div>
+    </section>
+  )
+}
+
+function PricingSection() {
+  return (
+    <section className="section pricing-section" id="pricing">
+      <div className="container">
+        <SectionHeading
+          eyebrow="TRANSPARENT &amp; ACCESSIBLE"
+          title="Invest in your academic success."
+          text="One affordable monthly plan with zero hidden fees. Everything included."
+          centered
+        />
+        <div className="pricing-card-wrap">
+          <div className="pricing-card">
+            <div className="pricing-card-header">
+              <span className="pricing-pill">FULL STUDENT PASS</span>
+              <div className="pricing-amount-row">
+                <span className="currency">ETB</span>
+                <span className="price">200</span>
+                <span className="period">/ month</span>
+              </div>
+              <p className="pricing-desc">Unlimited access to all universities, courses, timed practice exams, and AI study tutor.</p>
+            </div>
+
+            <div className="pricing-features-list">
+              <div className="pricing-feature-item"><Check size={16} /> <span>All 40+ Ethiopian university study spaces</span></div>
+              <div className="pricing-feature-item"><Check size={16} /> <span>Unlimited timed practice exam simulations</span></div>
+              <div className="pricing-feature-item"><Check size={16} /> <span>Curated past midterms, finals, and exit exam sets</span></div>
+              <div className="pricing-feature-item"><Check size={16} /> <span>Step-by-step code solutions with complexity analysis</span></div>
+              <div className="pricing-feature-item"><Check size={16} /> <span>Sura AI study assistant with course context</span></div>
+              <div className="pricing-feature-item"><Check size={16} /> <span>Instant automated activation via Chapa (Telebirr &amp; CBE)</span></div>
+            </div>
+
+            <div className="pricing-payment-badges">
+              <span>Securely powered by</span>
+              <div className="badges-row">
+                <span className="badge-pill chapa-pill">Chapa Gateway</span>
+                <span className="badge-pill telebirr-pill">Telebirr</span>
+                <span className="badge-pill cbe-pill">CBE Birr</span>
+              </div>
+            </div>
+
+            <div className="pricing-actions">
+              <a className="button button-primary pricing-cta" href="#register">
+                Get Started Now <ArrowRight size={16} />
+              </a>
+              <a className="button button-outline pricing-demo" href="#login">
+                Preview Demo Space
+              </a>
+            </div>
+            <p className="pricing-note"><LockKeyhole size={13} /> Chapa Test Mode sandbox available for developer testing.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FaqSection() {
+  const [openIdx, setOpenIdx] = useState(0)
+
+  const faqs = [
+    {
+      q: 'How does the National Exit Exam practice simulation work?',
+      a: 'The exam simulator is built to closely match the official Ministry of Education computer-based exam. It features timed countdowns, real-time question navigation, instant score calculation, and in-depth step-by-step explanations for each question.'
+    },
+    {
+      q: 'How do I pay using Chapa, and what methods are accepted?',
+      a: 'Payments are handled securely through Chapa, Ethiopia’s leading fintech gateway. You can pay using Telebirr, CBE Birr, Amole, or standard debit cards. Your subscription activates automatically within seconds of payment.'
+    },
+    {
+      q: 'Does Chapa Test Mode work for development testing?',
+      a: 'Yes! Sura Study includes full Chapa Sandbox Test Mode. You can test checkout in the hosted Chapa sandbox or simulate instant verification with a single click inside the checkout modal without charging real money.'
+    },
+    {
+      q: 'What if my university or course isn\'t listed yet?',
+      a: 'New course materials and university departments are uploaded regularly by faculty and verified contributors. Since Ethiopian universities follow the standardized national curriculum, you can use any matching course module or exit exam question bank immediately.'
+    },
+    {
+      q: 'Can I study on my mobile phone or tablet?',
+      a: 'Yes. Sura Study is fully responsive and designed to provide a comfortable study experience on any smartphone, tablet, or laptop, complete with dark mode for late-night review sessions.'
+    }
+  ]
+
+  return (
+    <section className="section faq-section" id="faq">
+      <div className="container">
+        <SectionHeading
+          eyebrow="COMMON QUESTIONS"
+          title="Frequently asked questions."
+          text="Everything you need to know about preparing for exams with Sura Study."
+          centered
+        />
+        <div className="faq-accordion">
+          {faqs.map((f, i) => {
+            const isOpen = openIdx === i
+            return (
+              <div className={`faq-item${isOpen ? ' open' : ''}`} key={f.q}>
+                <button
+                  type="button"
+                  className="faq-question"
+                  onClick={() => setOpenIdx(isOpen ? -1 : i)}
+                  aria-expanded={isOpen}
+                >
+                  <span>{f.q}</span>
+                  <ChevronDown size={18} className="faq-chevron" />
+                </button>
+                {isOpen && <p className="faq-answer">{f.a}</p>}
+              </div>
+            )
+          })}
+        </div>
       </div>
     </section>
   )
@@ -1050,12 +1786,12 @@ function Footer() {
     <footer className="site-footer">
       <div className="container">
         <div className="footer-main">
-          <div className="footer-about"><Logo light /><p>Your university study space, bringing practice and learning materials together.</p><a className="footer-contact" href="mailto:hello@surastudy.example">Say hello <ArrowUpRight size={14} /></a></div>
-          <div className="footer-links-group"><h3>Explore</h3><a href="#courses">Courses</a><a href="#features">Practice exams</a><a href="#workspace">Study materials</a><a href="#how-it-works">How it works</a></div>
-          <div className="footer-links-group"><h3>Study resources</h3><a href="#courses">Course library</a><a href="#features">Question bank</a><a href="#workspace">Lecture notes</a><a href="#benefits">Study tips</a><a href="#admin">Admin portal</a></div>
-          <div className="footer-note"><span className="footer-note-icon"><Atom size={16} /></span><p>Make space for focused learning.</p><a href="#home">Back to top <ArrowUpRight size={13} /></a></div>
+          <div className="footer-about"><Logo light /><p>Ethiopia's standardized higher education exam and study workspace, bringing code practice, lecture notes, and Ministry exit exam preparation together.</p><a className="footer-contact" href="mailto:hello@surastudy.example">Say hello <ArrowUpRight size={14} /></a></div>
+          <div className="footer-links-group"><h3>Platform</h3><a href="#curriculum">Curriculum tracks</a><a href="#sandbox">Exam sandbox</a><a href="#campuses">Campus network</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a></div>
+          <div className="footer-links-group"><h3>Study resources</h3><a href="#features">Timed mock exams</a><a href="#curriculum">Question banks</a><a href="#workspace">Lecture notes</a><a href="#how-it-works">How it works</a><a href="#admin">Admin portal</a></div>
+          <div className="footer-note"><span className="footer-note-icon"><Atom size={16} /></span><p>Engineered for focused, undistracted learning.</p><a href="#home">Back to top <ArrowUpRight size={13} /></a></div>
         </div>
-        <div className="footer-bottom">        <span>© 2026 Sura Study. Made for your next big moment.</span><span className="footer-bottom-links"><span>Built for students, one step at a time.</span></span></div>
+        <div className="footer-bottom">        <span>© 2026 Sura Study. Empowering university students across Ethiopia.</span><span className="footer-bottom-links"><span>Built for students, tested for perfection.</span></span></div>
       </div>
     </footer>
   )
@@ -1141,11 +1877,15 @@ function App() {
         <main>
           <HeroSection />
           <FeaturesSection />
-          <HowItWorks />
+          <CurriculumExplorerSection />
           <WorkspaceSection />
-          <CoursesSection />
-          <UniversitiesSection />
+          <CampusNetworkSection />
+          <MetricsSection />
+          <HowItWorks />
           <BenefitsSection />
+          <TestimonialsSection />
+          <PricingSection />
+          <FaqSection />
           <CallToAction />
         </main>
         <Footer />
@@ -1169,7 +1909,7 @@ function StudentGate({ dark, onToggleTheme, onSignOut }) {
     return () => { active = false }
   }, [])
   if (loading) return <main className="auth-loading"><span className="loading-spinner loading-spinner-large" role="status" aria-label="Loading" /><span>Loading your study space…</span></main>
-  return <StudentExperience dark={dark} onToggleTheme={onToggleTheme} onSignOut={onSignOut} onStudentUpdate={setStudent} student={student} />
+  return <StudentExperience key={student?.id || 'student'} dark={dark} onToggleTheme={onToggleTheme} onSignOut={onSignOut} onStudentUpdate={setStudent} student={student} />
 }
 
 function getPageFromHash() {

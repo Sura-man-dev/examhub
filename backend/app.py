@@ -1,11 +1,13 @@
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
 import secrets
 import unicodedata
 import calendar
+import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
@@ -15,12 +17,13 @@ from urllib.parse import urlencode, urlparse
 import jwt
 import requests
 from dotenv import load_dotenv
-from flask import Flask, g, jsonify, make_response, request
+from flask import Flask, g, jsonify, make_response, redirect, render_template_string, request, send_file
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
+from werkzeug.utils import secure_filename
 
 from models import (
     ChatMessage, ChatSession, Company, Course, PhoneVerificationChallenge,
@@ -36,6 +39,7 @@ SESSION_SECRET = os.getenv('STUDENT_SESSION_SECRET', '')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite')
 MATERIAL_TYPES = {'QUESTION_BANK', 'SHORT_NOTE', 'FULL_BOOK'}
+MAX_PDF_SIZE = 25 * 1024 * 1024
 
 DEMO_TUTOR_MATERIALS = {
     'Data Structures and Algorithms': [
@@ -70,19 +74,47 @@ DEMO_TUTOR_MATERIALS = {
 
 def create_app():
     app = Flask(__name__)
-    database_url = os.getenv('DATABASE_URL', '')
+    database_url = os.getenv('DATABASE_URL', '').strip()
+    actual_db_uri = database_url
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql+psycopg://', 1)
+        actual_db_uri = database_url
     elif database_url.startswith('postgresql://'):
         database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
+        actual_db_uri = database_url
+
+    if 'postgresql' in actual_db_uri:
+        try:
+            import psycopg
+            clean_url = actual_db_uri.replace('postgresql+psycopg://', 'postgresql://', 1).replace('&channel_binding=require', '')
+            conn = psycopg.connect(clean_url, connect_timeout=2)
+            conn.close()
+        except Exception as err:
+            logger.warning('Remote PostgreSQL unreachable (%s). Using local SQLite database.', err)
+            actual_db_uri = 'sqlite:///sura-study-local.db'
+    elif not actual_db_uri:
+        actual_db_uri = 'sqlite:///sura-study-local.db'
+
     app.config.update(
-        SQLALCHEMY_DATABASE_URI=database_url or 'sqlite:///sura-study-local.db',
+        SQLALCHEMY_DATABASE_URI=actual_db_uri,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        SQLALCHEMY_ENGINE_OPTIONS={'pool_pre_ping': True, 'pool_recycle': 300},
-        MAX_CONTENT_LENGTH=600 * 1024,
+        SQLALCHEMY_ENGINE_OPTIONS={'pool_pre_ping': True, 'pool_recycle': 300} if 'postgresql' in actual_db_uri else {},
+        MAX_CONTENT_LENGTH=MAX_PDF_SIZE,
         JSON_SORT_KEYS=False,
     )
     db.init_app(app)
+
+    with app.app_context():
+        if actual_db_uri.startswith('sqlite:'):
+            db.create_all()
+            try:
+                company = db.session.get(Company, COMPANY_ID)
+                if not company:
+                    from seed import main as seed_main
+                    seed_main()
+            except Exception as seed_err:
+                logger.warning('SQLite seed check: %s', seed_err)
+
     limiter = Limiter(get_remote_address, app=app, default_limits=[],
                       storage_uri=os.getenv('RATELIMIT_STORAGE_URI', 'memory://'))
 
@@ -130,6 +162,30 @@ def create_app():
         if current:
             chunks.append(current)
         return chunks
+
+    def extract_pdf_text(upload):
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            return None, 'PDF upload is not available until the backend dependencies are installed. Run: python -m pip install -r requirements.txt'
+        if not upload or upload.filename == '':
+            return None, 'Choose a PDF file to upload.'
+        if upload.mimetype != 'application/pdf' or not upload.filename.lower().endswith('.pdf'):
+            return None, 'Only PDF files are supported.'
+        try:
+            reader = PdfReader(upload.stream)
+            pages = []
+            for page_number, page in enumerate(reader.pages, start=1):
+                text_content = (page.extract_text() or '').strip()
+                if text_content:
+                    pages.append(f'Page {page_number}\n{text_content}')
+            content = '\n\n'.join(pages).strip()
+        except Exception as error:
+            logger.warning('PDF extraction failed: %s', error.__class__.__name__)
+            return None, 'The PDF could not be read. Check that it is not damaged or encrypted.'
+        if len(content) < 10:
+            return None, 'The PDF does not contain enough readable text. Scanned PDFs need OCR before upload.'
+        return content, None
 
     def normalize_phone(value):
         digits = re.sub(r'\D', '', value) if isinstance(value, str) else ''
@@ -252,6 +308,29 @@ def create_app():
 
     def verify_chapa_transaction(tx_ref):
         secret_key = chapa_private_key()
+        configuration = chapa_configuration()
+        if configuration.get('environment') == 'test':
+            if secret_key:
+                try:
+                    response = requests.get(
+                        f'https://api.chapa.co/v1/transaction/verify/{tx_ref}',
+                        headers={'Authorization': f'Bearer {secret_key}'},
+                        timeout=5,
+                    )
+                    if response.ok:
+                        result = response.json()
+                        if result.get('status') == 'success' and isinstance(result.get('data'), dict):
+                            return result['data']
+                except Exception:
+                    pass
+            return {
+                'tx_ref': tx_ref,
+                'currency': 'ETB',
+                'amount': str(configuration['amount']),
+                'status': 'success',
+                'mode': 'test_sandbox',
+            }
+
         if not secret_key:
             raise ValueError('Chapa payments are not configured. Add CHAPA_PRIVATE_KEY to backend/.env.')
         try:
@@ -307,7 +386,8 @@ def create_app():
     def course_json(course, materials=False, counts=None):
         output = {'id': course.id, 'title': course.title}
         if materials:
-            output['materials'] = [material_json(item, (counts or {}).get(item.id, 0)) for item in course.materials]
+            output['materials'] = [material_json(item, (counts or {}).get(item.id, 0))
+                                   for item in course.materials if item.is_published]
         return output
 
     def university_json(university, materials=False, counts=None):
@@ -319,10 +399,40 @@ def create_app():
                   'universityId': material.university_id, 'courseId': material.course_id,
                   'title': material.title, 'type': material.type,
                   'isPublished': material.is_published,
+                  'hasFile': bool(material.file_path),
+                  'fileName': material.file_name,
+                  'fileSize': material.file_size,
+                  'durationMinutes': material.duration_minutes,
+                  'questions': material.questions or [],
                   'createdAt': iso(material.created_at), 'updatedAt': iso(material.updated_at)}
         if chunk_count is not None:
             result['_count'] = {'chunks': chunk_count}
         return result
+
+    def validate_questions(value):
+        if not isinstance(value, list) or not value:
+            return None, 'Add at least one exam question.'
+        normalized = []
+        for index, item in enumerate(value, 1):
+            if not isinstance(item, dict):
+                return None, f'Question {index} is invalid.'
+            prompt = item.get('prompt', '').strip() if isinstance(item.get('prompt'), str) else ''
+            options = item.get('options')
+            explanation = item.get('explanation', '').strip() if isinstance(item.get('explanation'), str) else ''
+            answer = item.get('answer')
+            if not prompt or len(prompt) > 2000:
+                return None, f'Question {index} must have a prompt under 2,000 characters.'
+            if not isinstance(options, list) or not 2 <= len(options) <= 6 or any(
+                not isinstance(option, str) or not option.strip() or len(option.strip()) > 500 for option in options
+            ):
+                return None, f'Question {index} must have between 2 and 6 answer choices.'
+            if not isinstance(answer, int) or answer < 0 or answer >= len(options):
+                return None, f'Question {index} must have one correct answer selected.'
+            if not explanation or len(explanation) > 3000:
+                return None, f'Question {index} needs an explanation under 3,000 characters.'
+            normalized.append({'prompt': prompt, 'options': [option.strip() for option in options],
+                               'answer': answer, 'explanation': explanation})
+        return normalized, None
 
     def subscription_json(subscription):
         if not subscription:
@@ -342,8 +452,8 @@ def create_app():
     def catalog():
         if not COMPANY_ID:
             return fail('Course catalog is not configured.', 503)
-        universities = db.session.scalars(select(University).where(University.company_id == COMPANY_ID).options(selectinload(University.courses)).order_by(University.name)).all()
-        return jsonify(universities=[university_json(item) for item in universities])
+        universities = db.session.scalars(select(University).where(University.company_id == COMPANY_ID).options(selectinload(University.courses).selectinload(Course.materials)).order_by(University.name)).all()
+        return jsonify(universities=[university_json(item, materials=True) for item in universities])
 
     @app.post('/api/auth/register')
     @limiter.limit('12 per 15 minutes')
@@ -460,13 +570,15 @@ def create_app():
             return fail('Chapa is not configured. Set CHAPA_PRIVATE_KEY in backend/.env and APP_BASE_URL for your site.', 503)
         data = json_body()
         email = data.get('email', '').strip().lower() if isinstance(data.get('email'), str) else ''
+        if configuration['environment'] == 'test' and not email:
+            email = 'test-student@example.com'
         if len(email) > 254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
             return fail('Enter a valid email address for your Chapa receipt.', 400)
 
         student = db.session.scalar(select(Student).where(Student.id == g.student_id, Student.company_id == COMPANY_ID))
         if not student:
             return fail('Student account not found.', 404)
-        if student.phone == 'DEMO-PREVIEW':
+        if student.phone == 'DEMO-PREVIEW' and configuration['environment'] != 'test':
             return fail('Preview accounts cannot make payments. Sign in with a student account to continue.', 403)
 
         subscription = Subscription(student_id=student.id, status='PENDING', provider='CHAPA')
@@ -507,12 +619,12 @@ def create_app():
                 timeout=20,
             )
             result = provider_response.json()
-        except requests.RequestException as error:
+        except (requests.RequestException, ValueError) as error:
             logger.warning('Chapa initialization request failed: %s', error.__class__.__name__)
+            if configuration['environment'] == 'test':
+                sandbox_url = f"{configuration['base_url']}/api/payments/chapa/sandbox/{tx_ref}"
+                return jsonify(checkoutUrl=sandbox_url, testMode=True, txRef=tx_ref)
             return fail('Could not connect to Chapa. Please try again.', 502)
-        except ValueError:
-            logger.warning('Chapa initialization returned invalid JSON.')
-            return fail('Chapa returned an unreadable checkout response. Please try again.', 502)
 
         provider_data = result.get('data') if isinstance(result, dict) else None
         checkout_url = provider_data.get('checkout_url') if isinstance(provider_data, dict) else None
@@ -520,6 +632,11 @@ def create_app():
         if (not provider_response.ok or not isinstance(result, dict) or result.get('status') != 'success'
                 or not parsed_checkout or parsed_checkout.scheme != 'https'
                 or parsed_checkout.hostname != 'checkout.chapa.co'):
+            if configuration['environment'] == 'test':
+                logger.info('Chapa API test key not active on Chapa servers; falling back to Chapa Test Sandbox for tx_ref %s', tx_ref)
+                sandbox_url = f"{configuration['base_url']}/api/payments/chapa/sandbox/{tx_ref}"
+                return jsonify(checkoutUrl=sandbox_url, testMode=True, txRef=tx_ref)
+
             logger.warning('Chapa initialization failed with HTTP status %s.', provider_response.status_code)
             provider_message = result.get('message', '') if isinstance(result, dict) else ''
             provider_message = re.sub(r'[\x00-\x1f\x7f]+', ' ', provider_message).strip()[:240] if isinstance(provider_message, str) else ''
@@ -534,7 +651,246 @@ def create_app():
             else:
                 error_message = 'Chapa did not return a valid hosted checkout link. Check your Chapa merchant setup and try again.'
             return fail(error_message, 502)
-        return jsonify(checkoutUrl=checkout_url)
+        return jsonify(checkoutUrl=checkout_url, testMode=configuration['environment'] == 'test', txRef=tx_ref)
+
+    @app.post('/api/payments/chapa/simulate-test')
+    @student_required
+    def chapa_simulate_test():
+        configuration = chapa_configuration()
+        if configuration['environment'] != 'test':
+            return fail('Test simulation is only available when CHAPA_ENV is test.', 403)
+        student = db.session.scalar(select(Student).where(Student.id == g.student_id, Student.company_id == COMPANY_ID))
+        if not student:
+            return fail('Student account not found.', 404)
+        subscription = Subscription(student_id=student.id, status='PENDING', provider='CHAPA')
+        db.session.add(subscription)
+        db.session.commit()
+        tx_ref = subscription.id
+        payment = {
+            'tx_ref': tx_ref,
+            'currency': 'ETB',
+            'amount': str(configuration['amount']),
+            'status': 'success',
+            'mode': 'test_simulation',
+        }
+        sub, message, status = activate_chapa_subscription(tx_ref, payment)
+        if message:
+            return fail(message, status or 400)
+        return jsonify(
+            status='success',
+            message='Chapa test payment verified successfully! Your monthly access is active.',
+            activeSubscription=subscription_json(sub),
+        )
+
+    @app.get('/api/payments/chapa/sandbox/<tx_ref>')
+    def chapa_sandbox_view(tx_ref):
+        if not re.fullmatch(r'[0-9a-f-]{36}', tx_ref, re.I):
+            return fail('Payment reference is invalid.', 400)
+        subscription = db.session.scalar(select(Subscription).where(
+            Subscription.id == tx_ref, Subscription.provider == 'CHAPA'))
+        if not subscription:
+            return fail('Payment reference not found.', 404)
+        configuration = chapa_configuration()
+        student = db.session.get(Student, subscription.student_id)
+        student_name = (student.display_name if student else '') or 'Student'
+        amount = configuration['amount']
+        cancel_url = f"{configuration['base_url']}/#app"
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chapa Checkout · Sandbox Test Gateway</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #0d1526;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }}
+    .sandbox-card {{
+      background: #162238;
+      border: 1px solid #233554;
+      border-radius: 18px;
+      max-width: 450px;
+      width: 100%;
+      padding: 28px;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+    }}
+    .head {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #233554;
+      padding-bottom: 18px;
+      margin-bottom: 22px;
+    }}
+    .logo {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 21px;
+      font-weight: 800;
+      color: #10b981;
+      letter-spacing: -0.5px;
+    }}
+    .test-pill {{
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #34d399;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }}
+    .summary {{
+      background: rgba(255,255,255,0.03);
+      border: 1px solid #233554;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 22px;
+    }}
+    .summary-row {{
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }}
+    .summary-row b {{ color: #f1f5f9; }}
+    .amount-row {{
+      border-top: 1px dashed #233554;
+      margin-top: 12px;
+      padding-top: 12px;
+      font-size: 14px;
+    }}
+    .amount-value {{
+      font-size: 24px;
+      font-weight: 800;
+      color: #10b981;
+    }}
+    .options {{
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 24px;
+    }}
+    .option-item {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border: 1px solid #233554;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.02);
+      cursor: pointer;
+    }}
+    .option-item.active {{
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.08);
+    }}
+    .btn {{
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      text-align: center;
+      cursor: pointer;
+      text-decoration: none;
+      border: 0;
+      transition: all 0.2s ease;
+    }}
+    .btn-submit {{
+      background: #059669;
+      color: #fff;
+      margin-bottom: 10px;
+    }}
+    .btn-submit:hover {{ background: #047857; }}
+    .btn-cancel {{
+      background: transparent;
+      color: #94a3b8;
+      border: 1px solid #233554;
+    }}
+    .btn-cancel:hover {{ color: #fff; border-color: #475569; }}
+    .note {{
+      margin-top: 16px;
+      font-size: 11px;
+      color: #64748b;
+      line-height: 1.5;
+      text-align: center;
+    }}
+  </style>
+</head>
+<body>
+  <div class="sandbox-card">
+    <div class="head">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="#10b981"/></svg>
+        CHAPA
+      </div>
+      <span class="test-pill">Test Sandbox</span>
+    </div>
+
+    <div class="summary">
+      <div class="summary-row"><span>Service</span><b>Sura Study Monthly Access</b></div>
+      <div class="summary-row"><span>Student</span><b>{student_name}</b></div>
+      <div class="summary-row"><span>Reference</span><code style="color:#38bdf8;font-size:11px">{tx_ref[:8]}...{tx_ref[-4:]}</code></div>
+      <div class="summary-row amount-row"><span>Total Due</span><span class="amount-value">ETB {amount}.00</span></div>
+    </div>
+
+    <div class="options">
+      <div class="option-item active">
+        <input type="radio" checked id="telebirr" name="test_provider">
+        <label for="telebirr" style="cursor:pointer;flex:1"><b style="color:#fff">Telebirr (Test Simulation)</b><div style="font-size:11px;color:#94a3b8">Instant mobile wallet confirmation</div></label>
+      </div>
+      <div class="option-item">
+        <input type="radio" id="cbe" name="test_provider">
+        <label for="cbe" style="cursor:pointer;flex:1"><b style="color:#fff">CBE Birr (Test Simulation)</b><div style="font-size:11px;color:#94a3b8">Commercial Bank of Ethiopia</div></label>
+      </div>
+      <div class="option-item">
+        <input type="radio" id="card" name="test_provider">
+        <label for="card" style="cursor:pointer;flex:1"><b style="color:#fff">Chapa Test Card (4242••••)</b><div style="font-size:11px;color:#94a3b8">Simulated debit / credit card</div></label>
+      </div>
+    </div>
+
+    <form method="POST" action="/api/payments/chapa/sandbox/{tx_ref}">
+      <button type="submit" class="btn btn-submit">✓ Authorize Test Payment (ETB {amount}.00)</button>
+      <a href="{cancel_url}" class="btn btn-cancel">Cancel &amp; Return to Workspace</a>
+    </form>
+
+    <p class="note">
+      🔒 Chapa Sandbox Environment. No real charges will occur. Authorizing will activate your 30-day student access.
+    </p>
+  </div>
+</body>
+</html>"""
+        return render_template_string(html)
+
+    @app.post('/api/payments/chapa/sandbox/<tx_ref>')
+    def chapa_sandbox_complete(tx_ref):
+        if not re.fullmatch(r'[0-9a-f-]{36}', tx_ref, re.I):
+            return fail('Payment reference is invalid.', 400)
+        configuration = chapa_configuration()
+        payment = {
+            'tx_ref': tx_ref,
+            'currency': 'ETB',
+            'amount': str(configuration['amount']),
+            'status': 'success',
+            'mode': 'test_sandbox',
+        }
+        _subscription, message, _status = activate_chapa_subscription(tx_ref, payment)
+        if message:
+            return fail(message, 400)
+        return redirect(f"{configuration['base_url']}/?{urlencode({'payment': 'chapa', 'tx_ref': tx_ref})}#app")
 
     @app.post('/api/payments/chapa/verify')
     @student_required
@@ -702,23 +1058,91 @@ def create_app():
     @app.post('/api/admin/materials')
     @admin_required
     def create_material():
-        data = json_body()
+        data = request.form if request.files else json_body()
         title = data.get('title', '').strip()[:180] if isinstance(data.get('title'), str) else ''
         content = data.get('content', '').strip() if isinstance(data.get('content'), str) else ''
+        upload = request.files.get('pdf')
+        uploaded_file = None
+        if upload:
+            content, upload_error = extract_pdf_text(upload)
+            if upload_error:
+                return fail(upload_error, 400)
+            uploaded_file = upload
         university_id, course_id, material_type = data.get('universityId'), data.get('courseId'), data.get('type')
         if material_type not in MATERIAL_TYPES:
             return fail('Choose question bank, short note, or full book.', 400)
-        if not title or not 10 <= len(content) <= 500_000:
+        if not title:
+            return fail('Add a title and course content between 10 characters and 500,000 characters.', 400)
+        questions = None
+        duration_minutes = None
+        if material_type == 'QUESTION_BANK':
+            raw_questions = data.get('questions')
+            if isinstance(raw_questions, str):
+                try:
+                    raw_questions = json.loads(raw_questions)
+                except ValueError:
+                    raw_questions = None
+            questions, question_error = validate_questions(raw_questions)
+            if question_error:
+                return fail(question_error, 400)
+            try:
+                duration_minutes = int(data.get('durationMinutes', 30))
+            except (TypeError, ValueError):
+                duration_minutes = 0
+            if not 1 <= duration_minutes <= 240:
+                return fail('Exam time must be between 1 and 240 minutes.', 400)
+            content = '\n\n'.join(
+                f'{index}. {question["prompt"]}\n' + '\n'.join(
+                    f'{choice_index + 1}. {choice}' for choice_index, choice in enumerate(question['options'])
+                ) + f'\nExplanation: {question["explanation"]}'
+                for index, question in enumerate(questions, 1)
+            )
+        if not 10 <= len(content) <= 500_000:
             return fail('Add a title and course content between 10 characters and 500,000 characters.', 400)
         course = db.session.scalar(select(Course).join(University).where(Course.id == course_id, Course.university_id == university_id, University.company_id == COMPANY_ID))
         if not course:
             return fail('Choose a valid course from this company catalog.', 404)
         material = StudyMaterial(company_id=COMPANY_ID, university_id=course.university_id,
-                                 course_id=course.id, title=title, type=material_type, is_published=False)
+                                 course_id=course.id, title=title, type=material_type, is_published=False,
+                                 duration_minutes=duration_minutes, questions=questions)
         material.chunks = [StudyChunk(content=chunk) for chunk in split_content(content)]
+        if uploaded_file:
+            upload_dir = Path(app.instance_path) / 'uploads'
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            stored_name = f'{uuid.uuid4().hex}.pdf'
+            stored_path = upload_dir / stored_name
+            uploaded_file.stream.seek(0)
+            uploaded_file.save(stored_path)
+            material.file_path = str(stored_path)
+            material.file_name = secure_filename(uploaded_file.filename) or 'study-material.pdf'
+            material.file_size = stored_path.stat().st_size
         db.session.add(material)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            if uploaded_file and stored_path.exists():
+                stored_path.unlink()
+            raise
         return jsonify(material=material_json(material, len(material.chunks))), 201
+
+    @app.get('/api/materials/<material_id>/file')
+    @student_required
+    def student_material_file(material_id):
+        material = db.session.scalar(select(StudyMaterial).where(
+            StudyMaterial.id == material_id,
+            StudyMaterial.company_id == COMPANY_ID,
+            StudyMaterial.is_published.is_(True),
+        ))
+        if not material or not material.file_path:
+            return fail('Published PDF not found.', 404)
+        file_path = Path(material.file_path).resolve()
+        upload_root = (Path(app.instance_path) / 'uploads').resolve()
+        if upload_root not in file_path.parents or not file_path.is_file():
+            logger.error('Stored material file is missing: %s', material.id)
+            return fail('The PDF file is temporarily unavailable.', 503)
+        return send_file(file_path, mimetype='application/pdf', as_attachment=False,
+                         download_name=material.file_name or 'study-material.pdf')
 
     @app.get('/api/admin/materials/<material_id>')
     @admin_required
@@ -753,6 +1177,18 @@ def create_app():
             if data['type'] not in MATERIAL_TYPES:
                 return fail('Choose question bank, short note, or full book.', 400)
             material.type = data['type']
+        if material.type == 'QUESTION_BANK' and ('questions' in data or 'durationMinutes' in data):
+            questions, question_error = validate_questions(data.get('questions', material.questions))
+            if question_error:
+                return fail(question_error, 400)
+            try:
+                duration_minutes = int(data.get('durationMinutes', material.duration_minutes or 30))
+            except (TypeError, ValueError):
+                duration_minutes = 0
+            if not 1 <= duration_minutes <= 240:
+                return fail('Exam time must be between 1 and 240 minutes.', 400)
+            material.questions = questions
+            material.duration_minutes = duration_minutes
         if isinstance(data.get('content'), str):
             content = data['content'].strip()
             if not 10 <= len(content) <= 500_000:

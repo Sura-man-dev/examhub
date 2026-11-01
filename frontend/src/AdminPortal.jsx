@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, BookOpen, BookOpenCheck, Building2, Check, FileText, GraduationCap, LayoutDashboard, LogOut, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react'
 
 async function adminRequest(path, options = {}) {
+  const isFormData = options.body instanceof FormData
   const response = await fetch(path, {
     ...options,
     credentials: 'same-origin',
-    headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
+    headers: { ...(options.body && !isFormData ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
   })
   if (response.status === 204) return null
   const result = await response.json().catch(() => ({}))
@@ -39,7 +40,10 @@ export default function AdminPortal({ dark, onToggleTheme }) {
   const [materialTitle, setMaterialTitle] = useState('')
   const [materialType, setMaterialType] = useState('QUESTION_BANK')
   const [materialContent, setMaterialContent] = useState('')
+  const [materialPdf, setMaterialPdf] = useState(null)
   const [editingMaterial, setEditingMaterial] = useState('')
+  const [examDuration, setExamDuration] = useState(30)
+  const [questions, setQuestions] = useState([{ prompt: '', options: ['', '', '', ''], answer: 0, explanation: '' }])
 
   useEffect(() => {
     adminRequest('/api/admin/me').then((result) => {
@@ -106,9 +110,23 @@ export default function AdminPortal({ dark, onToggleTheme }) {
   async function saveMaterial(event) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('')
     try {
-      if (editingMaterial) await adminRequest(`/api/admin/materials/${editingMaterial}`, { method: 'PATCH', body: JSON.stringify({ universityId: selectedUniversity, courseId: selectedCourse, title: materialTitle, type: materialType, content: materialContent }) })
-      else await adminRequest('/api/admin/materials', { method: 'POST', body: JSON.stringify({ universityId: selectedUniversity, courseId: selectedCourse, title: materialTitle, type: materialType, content: materialContent }) })
-      setEditingMaterial(''); setMaterialTitle(''); setMaterialContent(''); await refresh(); setNotice('Material saved as a draft. Review it, then publish when it is ready.')
+      if (editingMaterial) {
+        await adminRequest(`/api/admin/materials/${editingMaterial}`, { method: 'PATCH', body: JSON.stringify({ universityId: selectedUniversity, courseId: selectedCourse, title: materialTitle, type: materialType, content: materialContent, durationMinutes: Number(examDuration), questions }) })
+      } else {
+        const body = new FormData()
+        body.append('universityId', selectedUniversity)
+        body.append('courseId', selectedCourse)
+        body.append('title', materialTitle)
+        body.append('type', materialType)
+        body.append('content', materialContent)
+        if (materialType === 'QUESTION_BANK') {
+          body.append('durationMinutes', String(examDuration))
+          body.append('questions', JSON.stringify(questions))
+        }
+        if (materialPdf) body.append('pdf', materialPdf)
+        await adminRequest('/api/admin/materials', { method: 'POST', body })
+      }
+      setEditingMaterial(''); setMaterialTitle(''); setMaterialContent(''); setMaterialPdf(null); await refresh(); setNotice('Material saved as a draft. Review it, then publish when it is ready.')
     } catch (requestError) { setError(requestError.message) } finally { setBusy(false) }
   }
 
@@ -122,6 +140,8 @@ export default function AdminPortal({ dark, onToggleTheme }) {
       setMaterialTitle(result.material.title)
       setMaterialType(result.material.type)
       setMaterialContent(result.material.content)
+      setExamDuration(result.material.durationMinutes || 30)
+      setQuestions(result.material.questions?.length ? result.material.questions : [{ prompt: '', options: ['', '', '', ''], answer: 0, explanation: '' }])
       setSection('materials')
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (requestError) { setError(requestError.message) }
@@ -161,7 +181,10 @@ export default function AdminPortal({ dark, onToggleTheme }) {
         <label>Email address<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
         <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
         {error && <p className="admin-alert" role="alert">{error}</p>}
-        <button className="admin-primary-button" disabled={busy}>{busy ? 'Signing in…' : 'Sign in securely'} <ArrowRight size={16} /></button>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+          <button type="submit" className="admin-primary-button" style={{ flex: 1 }} disabled={busy}>{busy ? 'Signing in…' : 'Sign in securely'} <ArrowRight size={16} /></button>
+          <button type="button" className="admin-cancel-edit" onClick={() => { setEmail('admin@example.com'); setPassword('123456789') }} title="Autofill standard development credentials">Autofill</button>
+        </div>
       </form>
     </main>
   )
@@ -186,13 +209,24 @@ export default function AdminPortal({ dark, onToggleTheme }) {
             <div className="admin-panel admin-recent"><div className="admin-panel-heading"><div><span className="admin-eyebrow">CONTENT WORKFLOW</span><h2>Review before students see it</h2></div><span className="admin-publish-count">{overview?.publishedMaterials ?? 0} published</span></div><p>New material is saved as a draft. Check titles, course placement, and text before publishing it to the student library and AI tutor.</p><button type="button" onClick={() => setSection('materials')}>Manage study materials <ArrowRight size={15} /></button></div>
           </>}
           {section === 'materials' && <>
-            <div className="admin-page-heading"><span className="admin-eyebrow">QUESTION BANKS · NOTES · BOOKS</span><h1>Study materials</h1><p>Add course content as text. It is split into searchable excerpts and stays hidden until you publish it.</p></div>
+            <div className="admin-page-heading"><span className="admin-eyebrow">QUESTION BANKS · NOTES · BOOKS</span><h1>Study materials</h1><p>Paste content or upload a PDF. Uploaded PDFs are extracted for search and remain available for students to read after publishing.</p></div>
             <form className="admin-panel admin-material-form" onSubmit={saveMaterial}>
               <h2><Plus size={17} /> {editingMaterial ? 'Edit study resource' : 'Add a study resource'}</h2>
               <div className="admin-form-grid"><label>University<select value={selectedUniversity} onChange={(event) => { setSelectedUniversity(event.target.value); setSelectedCourse('') }} required><option value="">Choose a university</option>{catalog.map((university) => <option value={university.id} key={university.id}>{university.name}</option>)}</select></label><label>Course<select value={selectedCourse} onChange={(event) => setSelectedCourse(event.target.value)} required><option value="">Choose a course</option>{availableCourses.map((course) => <option value={course.id} key={course.id}>{course.title}</option>)}</select></label></div>
               <div className="admin-form-grid"><label>Material title<input value={materialTitle} onChange={(event) => setMaterialTitle(event.target.value)} placeholder="e.g. Chapter 4 — Relational Algebra" maxLength={180} required /></label><label>Content type<select value={materialType} onChange={(event) => setMaterialType(event.target.value)}>{materialTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select></label></div>
-              <label>Study content<textarea value={materialContent} onChange={(event) => setMaterialContent(event.target.value)} placeholder="Paste reviewed questions, short-note text, or book text here…" minLength={10} maxLength={500000} rows={10} required /></label>
-              <div className="admin-form-foot"><small>{materialContent.length.toLocaleString()} / 500,000 characters · Saved as a private draft</small><span>{editingMaterial && <button className="admin-cancel-edit" type="button" onClick={() => { setEditingMaterial(''); setMaterialTitle(''); setMaterialContent('') }}>Cancel</button>}<button className="admin-primary-button" disabled={busy || !selectedCourse}>{busy ? 'Saving…' : editingMaterial ? 'Save changes' : 'Save draft'} <ArrowRight size={15} /></button></span></div>
+              {materialType === 'QUESTION_BANK' ? <div className="admin-question-builder">
+                <div className="admin-question-builder-heading"><div><b>Exam questions</b><small>Write each question, choose the correct option, and explain the answer for students.</small></div><label>Time limit (minutes)<input type="number" min="1" max="240" value={examDuration} onChange={(event) => setExamDuration(event.target.value)} required /></label></div>
+                {questions.map((question, questionIndex) => <fieldset className="admin-question-card" key={questionIndex}>
+                  <legend>Question {questionIndex + 1}</legend>
+                  <label>Question prompt<textarea value={question.prompt} onChange={(event) => setQuestions((current) => current.map((item, index) => index === questionIndex ? { ...item, prompt: event.target.value } : item))} placeholder="e.g. Which data structure uses LIFO order?" maxLength={2000} rows={3} required /></label>
+                  <div className="admin-option-grid">{question.options.map((option, optionIndex) => <label key={optionIndex}>Option {String.fromCharCode(65 + optionIndex)}<input value={option} onChange={(event) => setQuestions((current) => current.map((item, index) => index === questionIndex ? { ...item, options: item.options.map((value, choice) => choice === optionIndex ? event.target.value : value) } : item))} maxLength={500} required /><span><input type="radio" name={`correct-${questionIndex}`} checked={question.answer === optionIndex} onChange={() => setQuestions((current) => current.map((item, index) => index === questionIndex ? { ...item, answer: optionIndex } : item))} /> Correct answer</span></label>)}</div>
+                  <label>Answer explanation<textarea value={question.explanation} onChange={(event) => setQuestions((current) => current.map((item, index) => index === questionIndex ? { ...item, explanation: event.target.value } : item))} placeholder="Explain why the correct answer is right…" maxLength={3000} rows={3} required /></label>
+                  {questions.length > 1 && <button className="admin-cancel-edit" type="button" onClick={() => setQuestions((current) => current.filter((_, index) => index !== questionIndex))}>Remove question</button>}
+                </fieldset>)}
+                <button className="admin-cancel-edit" type="button" onClick={() => setQuestions((current) => [...current, { prompt: '', options: ['', '', '', ''], answer: 0, explanation: '' }])}><Plus size={14} /> Add another question</button>
+              </div> : <label>Study content<textarea value={materialContent} onChange={(event) => setMaterialContent(event.target.value)} placeholder="Paste reviewed short-note text or book text here…" minLength={materialPdf ? undefined : 10} maxLength={500000} rows={10} required={!materialPdf} /></label>}
+              {!editingMaterial && <label>Upload PDF<input type="file" accept="application/pdf,.pdf" onChange={(event) => setMaterialPdf(event.target.files?.[0] || null)} /><small>PDF only, maximum 25 MB. Text-based PDFs work best.</small></label>}
+              <div className="admin-form-foot"><small>{materialPdf ? `${materialPdf.name} selected · ` : ''}{materialContent.length.toLocaleString()} / 500,000 characters · Saved as a private draft</small>              <span>{editingMaterial && <button className="admin-cancel-edit" type="button" onClick={() => { setEditingMaterial(''); setMaterialTitle(''); setMaterialContent(''); setMaterialPdf(null) }}>Cancel</button>}<button className="admin-primary-button" disabled={busy || !selectedCourse || (materialType !== 'QUESTION_BANK' && !materialPdf && materialContent.length < 10)}>{busy ? 'Saving…' : editingMaterial ? 'Save changes' : 'Save draft'} <ArrowRight size={15} /></button></span></div>
             </form>
             <section className="admin-material-table"><div className="admin-panel-heading"><div><span className="admin-eyebrow">LIBRARY CONTENT</span><h2>Materials</h2></div><span className="admin-publish-count">{allMaterials.length} total</span></div>
               {allMaterials.length ? allMaterials.map((material) => { const Icon = materialTypes.find((type) => type.value === material.type)?.icon || FileText; return <article className="admin-material-row" key={material.id}><span className="admin-material-icon"><Icon size={17} /></span><div className="admin-material-info"><b>{material.title}</b><small>{material.universityName} · {material.courseTitle} · {material._count.chunks} searchable excerpts</small></div><span className={`admin-status ${material.isPublished ? 'published' : 'draft'}`}>{material.isPublished ? 'Published' : 'Draft'}</span><button type="button" onClick={() => editMaterial(material)}>Edit</button><button type="button" onClick={() => togglePublished(material)}>{material.isPublished ? 'Unpublish' : 'Publish'}</button><button type="button" className="admin-delete-button" onClick={() => deleteMaterial(material)} aria-label={`Delete ${material.title}`}><Trash2 size={16} /></button></article> }) : <p className="admin-empty">No course materials yet. Add a resource above.</p>}
