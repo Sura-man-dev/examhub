@@ -46,6 +46,9 @@ import { universities } from './data/universities'
 import AdminPortal from './AdminPortal'
 import './App.css'
 
+const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+const apiUrl = (path) => `${API_URL}${path}`
+
 const navigation = [
   { label: 'Curriculum', href: '#curriculum' },
   { label: 'Exam Sandbox', href: '#sandbox' },
@@ -172,7 +175,7 @@ function AuthPage({ mode, dark, onToggleTheme }) {
   const [demoEnabled, setDemoEnabled] = useState(false)
 
   useEffect(() => {
-    fetch('/api/auth/demo/status').then((response) => response.ok ? response.json() : null).then((result) => setDemoEnabled(Boolean(result?.enabled))).catch(() => setDemoEnabled(false))
+    fetch(apiUrl('/api/auth/demo/status')).then((response) => response.ok ? response.json() : null).then((result) => setDemoEnabled(Boolean(result?.enabled))).catch(() => setDemoEnabled(false))
   }, [])
 
   async function handleSubmit(event) {
@@ -187,7 +190,7 @@ function AuthPage({ mode, dark, onToggleTheme }) {
       if (isRegister && password !== String(formData.get('confirmPassword') || '')) throw new Error('Your passwords do not match.')
       const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login'
       const body = { phone, password, ...(isRegister ? { displayName: String(formData.get('fullName') || '') } : {}) }
-      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) })
+      const response = await fetch(apiUrl(endpoint), { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(body) })
       const result = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(result.error || 'Could not access your student account right now.')
       window.location.hash = 'app'
@@ -201,7 +204,7 @@ function AuthPage({ mode, dark, onToggleTheme }) {
   async function handleDemoAccess() {
     setBusy(true); setError('')
     try {
-      const response = await fetch('/api/auth/demo', { method: 'POST', credentials: 'same-origin' })
+      const response = await fetch(apiUrl('/api/auth/demo'), { method: 'POST', credentials: 'include' })
       const result = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(result.error || 'Demo student access is unavailable.')
       window.location.hash = 'app'
@@ -295,10 +298,10 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
     setProfileSaving(true)
     setProfileMessage('')
     try {
-      const response = await fetch('/api/auth/profile', {
+      const response = await fetch(apiUrl('/api/auth/profile'), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
+        credentials: 'include',
         body: JSON.stringify({ displayName: profileName }),
       })
       const result = await response.json().catch(() => ({}))
@@ -313,11 +316,11 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
   }
 
   useEffect(() => {
-    fetch('/api/catalog').then((response) => response.ok ? response.json() : null).then((result) => { if (result?.universities?.length) setCatalog(result.universities) }).catch(() => {})
+    fetch(apiUrl('/api/catalog')).then((response) => response.ok ? response.json() : null).then((result) => { if (result?.universities?.length) setCatalog(result.universities) }).catch(() => {})
   }, [])
 
   useEffect(() => {
-    fetch('/api/payments/chapa/config').then(async (response) => {
+    fetch(apiUrl('/api/payments/chapa/config')).then(async (response) => {
       const result = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(result.error || 'Payment settings are unavailable.')
       setPaymentConfig(result)
@@ -331,15 +334,15 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`)
     if (!txRef) return
     let active = true
-    fetch('/api/payments/chapa/verify', {
+    fetch(apiUrl('/api/payments/chapa/verify'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
+      credentials: 'include',
       body: JSON.stringify({ txRef }),
     }).then(async (response) => {
       const result = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(result.error || 'We could not verify the payment.')
-      const accountResponse = await fetch('/api/auth/me', { credentials: 'same-origin' })
+      const accountResponse = await fetch(apiUrl('/api/auth/me'), { credentials: 'include' })
       const accountResult = await accountResponse.json().catch(() => ({}))
       if (!accountResponse.ok) throw new Error(accountResult.error || 'Payment was confirmed, but your account could not be refreshed.')
       if (active) {
@@ -360,10 +363,10 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
     setPaymentBusy(true)
     setPaymentNotice('')
     try {
-      const response = await fetch('/api/payments/chapa/initialize', {
+      const response = await fetch(apiUrl('/api/payments/chapa/initialize'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
+        credentials: 'include',
         body: JSON.stringify({ email: billingEmail }),
       })
       const result = await response.json().catch(() => ({}))
@@ -382,10 +385,10 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
     setPaymentBusy(true)
     setPaymentNotice('')
     try {
-      const response = await fetch('/api/payments/chapa/simulate-test', {
+      const response = await fetch(apiUrl('/api/payments/chapa/simulate-test'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
+        credentials: 'include',
       })
       const result = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(result.error || 'Test payment simulation failed.')
@@ -498,7 +501,7 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
               <section className="student-page-heading"><span className="student-overline">FREE COURSE SAMPLES</span><h1>Notes & books</h1><p>Read these demonstration resources at no cost. Samples are illustrative and are not official university materials.</p></section>
               <div className="student-library-filter"><span>University</span><b>{selectedUniversityName}</b></div><div className="student-library-filter"><span>Exam year</span><b>{year}</b></div><div className="student-library-filter"><span>Course</span><b>{selectedCourse.title}</b></div>
               <div className="demo-resource-grid">
-                {uploadedMaterials.map((material) => <article className="demo-resource-card" key={material.id}><span className="demo-resource-icon"><FileText size={18} /></span><small>COURSE PDF · {material.type.replace('_', ' ')}</small><h2>{material.title}</h2><p>{material.fileName || 'Published course material'}</p><a className="student-card-link" href={`/api/materials/${material.id}/file`} target="_blank" rel="noreferrer">Read PDF <ArrowRight size={14} /></a></article>)}
+                {uploadedMaterials.map((material) => <article className="demo-resource-card" key={material.id}><span className="demo-resource-icon"><FileText size={18} /></span><small>COURSE PDF · {material.type.replace('_', ' ')}</small><h2>{material.title}</h2><p>{material.fileName || 'Published course material'}</p><a className="student-card-link" href={apiUrl(`/api/materials/${material.id}/file`)} target="_blank" rel="noreferrer">Read PDF <ArrowRight size={14} /></a></article>)}
                 {Object.entries(demoResources[selectedCourse.title] || {}).map(([kind, resource]) => <article className="demo-resource-card" key={kind}><span className="demo-resource-icon">{kind === 'note' ? <FileText size={18} /> : <BookOpen size={18} />}</span><small>FREE SAMPLE {kind.toUpperCase()}</small><h2>{resource.title}</h2><p>{resource.content.slice(0, 150)}…</p><button type="button" onClick={() => setReadingResource({ ...resource, kind })}>Read sample <ArrowRight size={14} /></button></article>)}
               </div>
             </> : <section className="selection-empty-state"><b>Choose your study path first</b><p>Select a university, exam year, and course to see free reading samples.</p><button type="button" onClick={() => setTab('home')}>Choose university and course <ArrowRight size={14} /></button></section>}
@@ -710,10 +713,10 @@ function AiChatModal({ mode = 'public', demoMode = false, dark = false, universi
     setBusy(true)
     setError('')
     try {
-      const response = await fetch(studentTutor ? '/api/ai/chat' : '/api/ai/public-chat', {
+      const response = await fetch(apiUrl(studentTutor ? '/api/ai/chat' : '/api/ai/public-chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
+        credentials: 'include',
         body: JSON.stringify(studentTutor ? { question, university, course, sessionId } : { question }),
       })
       const result = await response.json().catch(() => ({}))
@@ -1291,7 +1294,7 @@ function CurriculumExplorerSection() {
   const [selectedTrack, setSelectedTrack] = useState('ALL')
 
   useEffect(() => {
-    fetch('/api/catalog')
+    fetch(apiUrl('/api/catalog'))
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.universities?.length) {
@@ -1823,13 +1826,13 @@ function App() {
   }
 
   async function signOut() {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {})
+    await fetch(apiUrl('/api/auth/logout'), { method: 'POST', credentials: 'include' }).catch(() => {})
     setLoggedIn(false)
     window.location.hash = 'home'
   }
 
   useEffect(() => {
-    fetch('/api/auth/me', { credentials: 'same-origin' }).then((response) => setLoggedIn(response.ok)).catch(() => setLoggedIn(false)).finally(() => setAuthChecking(false))
+    fetch(apiUrl('/api/auth/me'), { credentials: 'include' }).then((response) => setLoggedIn(response.ok)).catch(() => setLoggedIn(false)).finally(() => setAuthChecking(false))
   }, [])
 
   useEffect(() => {
@@ -1901,7 +1904,7 @@ function StudentGate({ dark, onToggleTheme, onSignOut }) {
   const [student, setStudent] = useState(null)
   useEffect(() => {
     let active = true
-    fetch('/api/auth/me', { credentials: 'same-origin' }).then(async (response) => {
+    fetch(apiUrl('/api/auth/me'), { credentials: 'include' }).then(async (response) => {
       if (!active) return
       if (response.ok) { const result = await response.json(); setStudent(result.student); setLoading(false) }
       else window.location.hash = 'login'
