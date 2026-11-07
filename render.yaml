@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: examhub-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 2 --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: COMPANY_ID
+        value: 8809173a-4a13-473e-985b-6f80503c5fa7
+      - key: APP_BASE_URL
+        value: https://surastudy-g58abkvy2-fdt4.vercel.app
+      - key: WEB_ORIGIN
+        value: https://surastudy-g58abkvy2-fdt4.vercel.app
+      - key: CORS_ORIGINS
+        value: https://surastudy-g58abkvy2-fdt4.vercel.app
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_STUDENT_ENABLED
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: STUDENT_SESSION_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
+      - key: CHAPA_PRIVATE_KEY
+        sync: false
+      - key: CHAPA_ENV
+        value: test
+      - key: CHAPA_AMOUNT
+        value: "200"
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

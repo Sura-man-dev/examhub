@@ -46,8 +46,56 @@ If you just copied `.env.example`, edit `.env` and set:
 - `CHAPA_PUBLIC_KEY`: optional public key for other client-side Chapa integrations. This hosted checkout flow does not send it to the browser or require it.
 - `CHAPA_AMOUNT`: monthly plan price in ETB (currently set to `200`)
 - `APP_BASE_URL`: frontend origin used for payment return and callback URLs
+- `CORS_ORIGINS`: comma-separated frontend origins allowed to call the API
 
 Never put backend credentials in frontend files or commit `.env`.
+
+### Vercel + Render production setup
+
+Set `VITE_API_URL` in the Vercel project to the public Render service URL,
+without a trailing slash, for example:
+
+```dotenv
+VITE_API_URL="https://examhub-api.onrender.com"
+```
+
+The application also has a fallback to the configured Render service URL, but
+setting the Vercel variable explicitly is recommended for clarity and future
+backend URL changes.
+
+Set these variables in the Render service:
+
+```dotenv
+APP_BASE_URL="https://your-vercel-domain.vercel.app"
+WEB_ORIGIN="https://your-vercel-domain.vercel.app"
+CORS_ORIGINS="https://your-vercel-domain.vercel.app"
+NODE_ENV="production"
+DEMO_STUDENT_ENABLED="false"
+```
+
+For the current deployment, use these exact values:
+
+```dotenv
+COMPANY_ID="8809173a-4a13-473e-985b-6f80503c5fa7"
+APP_BASE_URL="https://surastudy-g58abkvy2-fdt4.vercel.app"
+WEB_ORIGIN="https://surastudy-g58abkvy2-fdt4.vercel.app"
+CORS_ORIGINS="https://surastudy-g58abkvy2-fdt4.vercel.app"
+NODE_ENV="production"
+DEMO_STUDENT_ENABLED="false"
+```
+
+`DATABASE_URL`, `DIRECT_URL`, `STUDENT_SESSION_SECRET`, `ADMIN_EMAIL`, and
+`ADMIN_PASSWORD` must also be present in Render. They are intentionally not
+stored in `render.yaml` or committed to the repository.
+
+Use the exact deployed Vercel origin, including a custom domain if one is
+used. After changing `VITE_API_URL`, redeploy Vercel because Vite embeds
+`VITE_*` variables during the build. After changing Render variables, restart
+or redeploy the Render service.
+
+The browser uses credentialed requests for sign-in. Production cookies are
+therefore `Secure` and `SameSite=None`, and the API only permits the origins
+listed in `CORS_ORIGINS`.
 
 ### Chapa test payments
 
