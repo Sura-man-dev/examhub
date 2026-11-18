@@ -8,6 +8,7 @@ import secrets
 import unicodedata
 import calendar
 import uuid
+from urllib.parse import urlparse
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
@@ -37,7 +38,8 @@ logger = logging.getLogger('sura-study')
 COMPANY_ID = os.getenv('COMPANY_ID', '')
 SESSION_SECRET = os.getenv('STUDENT_SESSION_SECRET', '')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite')
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')
+GEMINI_FALLBACK_MODEL = 'gemini-2.0-flash'
 MATERIAL_TYPES = {'QUESTION_BANK', 'SHORT_NOTE', 'FULL_BOOK'}
 MAX_PDF_SIZE = 25 * 1024 * 1024
 
@@ -74,6 +76,23 @@ DEMO_TUTOR_MATERIALS = {
 
 def create_app():
     app = Flask(__name__)
+    allowed_origins = {
+        origin.strip().rstrip('/') for origin in os.getenv('CORS_ORIGINS', os.getenv('WEB_ORIGIN', '')).split(',')
+        if origin.strip()
+    }
+
+    def origin_allowed(origin):
+        if not origin:
+            return False
+        normalized = origin.rstrip('/')
+        if normalized in allowed_origins:
+            return True
+        parsed = urlparse(normalized)
+        return (
+            parsed.scheme == 'https'
+            and parsed.hostname
+            and (parsed.hostname == 'vercel.app' or parsed.hostname.endswith('.vercel.app'))
+        )
     database_url = os.getenv('DATABASE_URL', '').strip()
     actual_db_uri = database_url
     if database_url.startswith('postgres://'):
@@ -103,6 +122,17 @@ def create_app():
         JSON_SORT_KEYS=False,
     )
     db.init_app(app)
+
+    @app.after_request
+    def add_cross_origin_headers(response):
+        origin = request.headers.get('Origin', '').rstrip('/')
+        if origin_allowed(origin):
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PATCH, DELETE, OPTIONS'
+            response.headers.add('Vary', 'Origin')
+        return response
 
     with app.app_context():
         if actual_db_uri.startswith('sqlite:'):
@@ -217,7 +247,16 @@ def create_app():
         return jwt.encode(payload, SESSION_SECRET, algorithm='HS256')
 
     def set_session_cookie(response, name, token, lifetime):
-        response.set_cookie(name, token, httponly=True, secure=os.getenv('FLASK_ENV') == 'production' or os.getenv('NODE_ENV') == 'production', samesite='Lax', max_age=int(lifetime.total_seconds()), path='/')
+        production = os.getenv('FLASK_ENV') == 'production' or os.getenv('NODE_ENV') == 'production'
+        response.set_cookie(name, token, httponly=True, secure=production,
+                            samesite='None' if production else 'Lax',
+                            max_age=int(lifetime.total_seconds()), path='/')
+        return response
+
+    def clear_session_cookie(response, name):
+        production = os.getenv('FLASK_ENV') == 'production' or os.getenv('NODE_ENV') == 'production'
+        response.delete_cookie(name, path='/', httponly=True, secure=production,
+                               samesite='None' if production else 'Lax')
         return response
 
     def student_session(student):
@@ -446,7 +485,11 @@ def create_app():
 
     @app.get('/api/health')
     def health():
-        return jsonify(status='ok')
+        return jsonify(
+            status='ok',
+            configured=bool(COMPANY_ID and SESSION_SECRET),
+            database=bool(actual_db_uri),
+        )
 
     @app.get('/api/catalog')
     def catalog():
@@ -943,8 +986,7 @@ def create_app():
     @app.post('/api/auth/logout')
     def student_logout():
         response = make_response('', 204)
-        response.delete_cookie('sura_student_session', path='/', httponly=True, samesite='Lax')
-        return response
+        return clear_session_cookie(response, 'sura_student_session')
 
     @app.post('/api/admin/login')
     @limiter.limit('8 per 15 minutes')
@@ -971,8 +1013,7 @@ def create_app():
     @app.post('/api/admin/logout')
     def admin_logout():
         response = make_response('', 204)
-        response.delete_cookie('sura_admin_session', path='/', httponly=True, samesite='Lax')
-        return response
+        return clear_session_cookie(response, 'sura_admin_session')
 
     @app.get('/api/admin/overview')
     @admin_required
@@ -1334,12 +1375,20 @@ def call_gemini(system_instruction, contents, max_tokens):
     if system_instruction:
         body['systemInstruction'] = {'parts': [{'text': system_instruction}]}
     try:
-        response = requests.post(
-            f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent',
-            headers={'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY},
-            json=body, timeout=(5, 25),
-        )
-        payload = response.json() if response.content else {}
+        models = [GEMINI_MODEL]
+        if GEMINI_MODEL != GEMINI_FALLBACK_MODEL:
+            models.append(GEMINI_FALLBACK_MODEL)
+        response = None
+        payload = {}
+        for model in models:
+            response = requests.post(
+                f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
+                headers={'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY},
+                json=body, timeout=(5, 25),
+            )
+            payload = response.json() if response.content else {}
+            if response.ok or response.status_code != 404:
+                break
         if not response.ok:
             logger.warning('Gemini request failed with HTTP %s (%s)', response.status_code, payload.get('error', {}).get('status', 'provider error'))
             return {'error': 'Sura AI could not answer right now. Please try again shortly.'}, 502

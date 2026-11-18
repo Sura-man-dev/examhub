@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, BookOpen, BookOpenCheck, Building2, Check, FileText, GraduationCap, LayoutDashboard, LogOut, Plus, ShieldCheck, Trash2, Users, X } from 'lucide-react'
-
-const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
-const apiUrl = (path) => `${API_URL}${path}`
+import { apiErrorMessage, apiUrl } from './api'
 
 async function adminRequest(path, options = {}) {
   const isFormData = options.body instanceof FormData
@@ -43,7 +41,9 @@ export default function AdminPortal({ dark, onToggleTheme }) {
   const [materialTitle, setMaterialTitle] = useState('')
   const [materialType, setMaterialType] = useState('QUESTION_BANK')
   const [materialContent, setMaterialContent] = useState('')
-  const [materialPdf, setMaterialPdf] = useState(null)
+  const [materialFile, setMaterialFile] = useState(null)
+  const [existingFileName, setExistingFileName] = useState('')
+  const [removeMaterialFile, setRemoveMaterialFile] = useState(false)
   const [editingMaterial, setEditingMaterial] = useState('')
   const [examDuration, setExamDuration] = useState(30)
   const [questions, setQuestions] = useState([{ prompt: '', options: ['', '', '', ''], answer: 0, explanation: '' }])
@@ -66,7 +66,7 @@ export default function AdminPortal({ dark, onToggleTheme }) {
         setStudents(studentData.students || [])
         setSelectedUniversity((current) => current || content.universities?.[0]?.id || '')
       })
-      .catch((requestError) => { if (active) setError(requestError.message) })
+      .catch((requestError) => { if (active) setError(apiErrorMessage(requestError, 'The admin request could not be completed.')) })
     return () => { active = false }
   }, [isAdmin])
 
@@ -83,7 +83,7 @@ export default function AdminPortal({ dark, onToggleTheme }) {
       setAdminEmail(result.admin.email)
       setIsAdmin(true)
       setPassword('')
-    } catch (requestError) { setError(requestError.message) } finally { setBusy(false) }
+    } catch (requestError) { setError(apiErrorMessage(requestError, 'The admin request could not be completed.')) } finally { setBusy(false) }
   }
 
   async function refresh() {
@@ -99,7 +99,7 @@ export default function AdminPortal({ dark, onToggleTheme }) {
     try {
       await adminRequest('/api/admin/universities', { method: 'POST', body: JSON.stringify({ name: universityName }) })
       setUniversityName(''); await refresh(); setNotice('University added to your catalog.')
-    } catch (requestError) { setError(requestError.message) } finally { setBusy(false) }
+    } catch (requestError) { setError(apiErrorMessage(requestError, 'The admin request could not be completed.')) } finally { setBusy(false) }
   }
 
   async function createCourse(event) {
@@ -107,30 +107,39 @@ export default function AdminPortal({ dark, onToggleTheme }) {
     try {
       await adminRequest(`/api/admin/universities/${selectedUniversity}/courses`, { method: 'POST', body: JSON.stringify({ title: newCourse }) })
       setNewCourse(''); await refresh(); setNotice('Course added to the university.')
-    } catch (requestError) { setError(requestError.message) } finally { setBusy(false) }
+    } catch (requestError) { setError(apiErrorMessage(requestError, 'The admin request could not be completed.')) } finally { setBusy(false) }
   }
 
   async function saveMaterial(event) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('')
     try {
-      if (editingMaterial) {
-        await adminRequest(`/api/admin/materials/${editingMaterial}`, { method: 'PATCH', body: JSON.stringify({ universityId: selectedUniversity, courseId: selectedCourse, title: materialTitle, type: materialType, content: materialContent, durationMinutes: Number(examDuration), questions }) })
+      const body = new FormData()
+      body.append('universityId', selectedUniversity)
+      body.append('courseId', selectedCourse)
+      body.append('title', materialTitle)
+      body.append('type', materialType)
+      if (materialType === 'QUESTION_BANK') {
+        body.append('durationMinutes', String(examDuration))
+        body.append('questions', JSON.stringify(questions))
       } else {
-        const body = new FormData()
-        body.append('universityId', selectedUniversity)
-        body.append('courseId', selectedCourse)
-        body.append('title', materialTitle)
-        body.append('type', materialType)
         body.append('content', materialContent)
-        if (materialType === 'QUESTION_BANK') {
-          body.append('durationMinutes', String(examDuration))
-          body.append('questions', JSON.stringify(questions))
-        }
-        if (materialPdf) body.append('pdf', materialPdf)
+      }
+      if (materialFile) body.append('file', materialFile)
+      if (removeMaterialFile) body.append('removeFile', 'true')
+      if (editingMaterial) {
+        await adminRequest(`/api/admin/materials/${editingMaterial}`, { method: 'PATCH', body })
+      } else {
         await adminRequest('/api/admin/materials', { method: 'POST', body })
       }
-      setEditingMaterial(''); setMaterialTitle(''); setMaterialContent(''); setMaterialPdf(null); await refresh(); setNotice('Material saved as a draft. Review it, then publish when it is ready.')
-    } catch (requestError) { setError(requestError.message) } finally { setBusy(false) }
+      setEditingMaterial('')
+      setMaterialTitle('')
+      setMaterialContent('')
+      setMaterialFile(null)
+      setExistingFileName('')
+      setRemoveMaterialFile(false)
+      await refresh()
+      setNotice('Material saved as a draft. Review it, then publish when it is ready.')
+    } catch (requestError) { setError(apiErrorMessage(requestError, 'The admin request could not be completed.')) } finally { setBusy(false) }
   }
 
   async function editMaterial(material) {
@@ -143,11 +152,14 @@ export default function AdminPortal({ dark, onToggleTheme }) {
       setMaterialTitle(result.material.title)
       setMaterialType(result.material.type)
       setMaterialContent(result.material.content)
+      setMaterialFile(null)
+      setExistingFileName(result.material.fileName || '')
+      setRemoveMaterialFile(false)
       setExamDuration(result.material.durationMinutes || 30)
       setQuestions(result.material.questions?.length ? result.material.questions : [{ prompt: '', options: ['', '', '', ''], answer: 0, explanation: '' }])
       setSection('materials')
       window.scrollTo({ top: 0, behavior: 'smooth' })
-    } catch (requestError) { setError(requestError.message) }
+    } catch (requestError) { setError(apiErrorMessage(requestError, 'The admin request could not be completed.')) }
   }
 
   async function togglePublished(material) {
@@ -155,14 +167,14 @@ export default function AdminPortal({ dark, onToggleTheme }) {
     try {
       await adminRequest(`/api/admin/materials/${material.id}`, { method: 'PATCH', body: JSON.stringify({ isPublished: !material.isPublished }) })
       await refresh(); setNotice(material.isPublished ? 'Material moved back to drafts.' : 'Material published to its course library.')
-    } catch (requestError) { setError(requestError.message) }
+    } catch (requestError) { setError(apiErrorMessage(requestError, 'The admin request could not be completed.')) }
   }
 
   async function deleteMaterial(material) {
     if (!window.confirm(`Delete “${material.title}” and its stored content?`)) return
     setError(''); setNotice('')
     try { await adminRequest(`/api/admin/materials/${material.id}`, { method: 'DELETE' }); await refresh(); setNotice('Material deleted.') }
-    catch (requestError) { setError(requestError.message) }
+    catch (requestError) { setError(apiErrorMessage(requestError, 'The admin request could not be completed.')) }
   }
 
   async function logout() {
@@ -212,7 +224,7 @@ export default function AdminPortal({ dark, onToggleTheme }) {
             <div className="admin-panel admin-recent"><div className="admin-panel-heading"><div><span className="admin-eyebrow">CONTENT WORKFLOW</span><h2>Review before students see it</h2></div><span className="admin-publish-count">{overview?.publishedMaterials ?? 0} published</span></div><p>New material is saved as a draft. Check titles, course placement, and text before publishing it to the student library and AI tutor.</p><button type="button" onClick={() => setSection('materials')}>Manage study materials <ArrowRight size={15} /></button></div>
           </>}
           {section === 'materials' && <>
-            <div className="admin-page-heading"><span className="admin-eyebrow">QUESTION BANKS · NOTES · BOOKS</span><h1>Study materials</h1><p>Paste content or upload a PDF. Uploaded PDFs are extracted for search and remain available for students to read after publishing.</p></div>
+            <div className="admin-page-heading"><span className="admin-eyebrow">QUESTION BANKS · NOTES · BOOKS</span><h1>Study materials</h1><p>Create a question bank, paste reviewed content, or upload a PDF or PowerPoint presentation. Documents are extracted for the course tutor and remain available to students after publishing.</p></div>
             <form className="admin-panel admin-material-form" onSubmit={saveMaterial}>
               <h2><Plus size={17} /> {editingMaterial ? 'Edit study resource' : 'Add a study resource'}</h2>
               <div className="admin-form-grid"><label>University<select value={selectedUniversity} onChange={(event) => { setSelectedUniversity(event.target.value); setSelectedCourse('') }} required><option value="">Choose a university</option>{catalog.map((university) => <option value={university.id} key={university.id}>{university.name}</option>)}</select></label><label>Course<select value={selectedCourse} onChange={(event) => setSelectedCourse(event.target.value)} required><option value="">Choose a course</option>{availableCourses.map((course) => <option value={course.id} key={course.id}>{course.title}</option>)}</select></label></div>
@@ -227,12 +239,12 @@ export default function AdminPortal({ dark, onToggleTheme }) {
                   {questions.length > 1 && <button className="admin-cancel-edit" type="button" onClick={() => setQuestions((current) => current.filter((_, index) => index !== questionIndex))}>Remove question</button>}
                 </fieldset>)}
                 <button className="admin-cancel-edit" type="button" onClick={() => setQuestions((current) => [...current, { prompt: '', options: ['', '', '', ''], answer: 0, explanation: '' }])}><Plus size={14} /> Add another question</button>
-              </div> : <label>Study content<textarea value={materialContent} onChange={(event) => setMaterialContent(event.target.value)} placeholder="Paste reviewed short-note text or book text here…" minLength={materialPdf ? undefined : 10} maxLength={500000} rows={10} required={!materialPdf} /></label>}
-              {!editingMaterial && <label>Upload PDF<input type="file" accept="application/pdf,.pdf" onChange={(event) => setMaterialPdf(event.target.files?.[0] || null)} /><small>PDF only, maximum 25 MB. Text-based PDFs work best.</small></label>}
-              <div className="admin-form-foot"><small>{materialPdf ? `${materialPdf.name} selected · ` : ''}{materialContent.length.toLocaleString()} / 500,000 characters · Saved as a private draft</small>              <span>{editingMaterial && <button className="admin-cancel-edit" type="button" onClick={() => { setEditingMaterial(''); setMaterialTitle(''); setMaterialContent(''); setMaterialPdf(null) }}>Cancel</button>}<button className="admin-primary-button" disabled={busy || !selectedCourse || (materialType !== 'QUESTION_BANK' && !materialPdf && materialContent.length < 10)}>{busy ? 'Saving…' : editingMaterial ? 'Save changes' : 'Save draft'} <ArrowRight size={15} /></button></span></div>
+              </div> : <label>Study content<textarea value={materialContent} onChange={(event) => setMaterialContent(event.target.value)} placeholder="Paste reviewed short-note text or book text here…" minLength={materialFile || (existingFileName && !removeMaterialFile) ? undefined : 10} maxLength={500000} rows={10} required={!materialFile && (!existingFileName || removeMaterialFile)} /></label>}
+              {(materialType !== 'QUESTION_BANK' || existingFileName) && <label>Upload a PDF or PowerPoint<input type="file" accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx" onChange={(event) => { const file = event.target.files?.[0] || null; if (file && !/\.(pdf|pptx)$/i.test(file.name)) { setError('Choose a PDF or PowerPoint (.pptx) file.'); event.target.value = ''; setMaterialFile(null); return } if (file && file.size > 25 * 1024 * 1024) { setError('Choose a file no larger than 25 MB.'); event.target.value = ''; setMaterialFile(null); return } setError(''); setMaterialFile(file); setRemoveMaterialFile(false) }} /><small>PDF or PowerPoint (.pptx), maximum 25 MB. Select text-based documents; scanned or image-only pages need OCR.</small>{existingFileName && <span className="admin-file-current"><FileText size={14} /> Current file: {existingFileName}{!removeMaterialFile && <button type="button" onClick={() => { setRemoveMaterialFile(true); setMaterialFile(null) }}>Remove file</button>}{removeMaterialFile && <button type="button" onClick={() => setRemoveMaterialFile(false)}>Keep file</button>}</span>}{materialFile && <span className="admin-file-current"><FileText size={14} /> {materialFile.name} selected{existingFileName ? ' · replaces current file' : ''}</span>}</label>}
+              <div className="admin-form-foot"><small>{materialFile ? `${materialFile.name} selected · ` : existingFileName && !removeMaterialFile ? `${existingFileName} · ` : ''}{materialType === 'QUESTION_BANK' ? `${questions.length} question${questions.length === 1 ? '' : 's'}` : `${materialContent.length.toLocaleString()} / 500,000 characters`} · Saved as a private draft</small>              <span>{editingMaterial && <button className="admin-cancel-edit" type="button" onClick={() => { setEditingMaterial(''); setMaterialTitle(''); setMaterialContent(''); setMaterialFile(null); setExistingFileName(''); setRemoveMaterialFile(false) }}>Cancel</button>}<button className="admin-primary-button" disabled={busy || !selectedCourse || (materialType !== 'QUESTION_BANK' && !materialFile && ((!existingFileName || removeMaterialFile) && materialContent.length < 10))}>{busy ? 'Saving…' : editingMaterial ? 'Save changes' : 'Save draft'} <ArrowRight size={15} /></button></span></div>
             </form>
             <section className="admin-material-table"><div className="admin-panel-heading"><div><span className="admin-eyebrow">LIBRARY CONTENT</span><h2>Materials</h2></div><span className="admin-publish-count">{allMaterials.length} total</span></div>
-              {allMaterials.length ? allMaterials.map((material) => { const Icon = materialTypes.find((type) => type.value === material.type)?.icon || FileText; return <article className="admin-material-row" key={material.id}><span className="admin-material-icon"><Icon size={17} /></span><div className="admin-material-info"><b>{material.title}</b><small>{material.universityName} · {material.courseTitle} · {material._count.chunks} searchable excerpts</small></div><span className={`admin-status ${material.isPublished ? 'published' : 'draft'}`}>{material.isPublished ? 'Published' : 'Draft'}</span><button type="button" onClick={() => editMaterial(material)}>Edit</button><button type="button" onClick={() => togglePublished(material)}>{material.isPublished ? 'Unpublish' : 'Publish'}</button><button type="button" className="admin-delete-button" onClick={() => deleteMaterial(material)} aria-label={`Delete ${material.title}`}><Trash2 size={16} /></button></article> }) : <p className="admin-empty">No course materials yet. Add a resource above.</p>}
+              {allMaterials.length ? allMaterials.map((material) => { const Icon = materialTypes.find((type) => type.value === material.type)?.icon || FileText; return <article className="admin-material-row" key={material.id}><span className="admin-material-icon"><Icon size={17} /></span><div className="admin-material-info"><b>{material.title}</b><small>{material.universityName} · {material.courseTitle} · {material._count.chunks} searchable excerpts{material.fileName ? ` · ${material.fileName}` : ''}</small></div><span className={`admin-status ${material.isPublished ? 'published' : 'draft'}`}>{material.isPublished ? 'Published' : 'Draft'}</span><button type="button" onClick={() => editMaterial(material)}>Edit</button><button type="button" onClick={() => togglePublished(material)}>{material.isPublished ? 'Unpublish' : 'Publish'}</button><button type="button" className="admin-delete-button" onClick={() => deleteMaterial(material)} aria-label={`Delete ${material.title}`}><Trash2 size={16} /></button></article> }) : <p className="admin-empty">No course materials yet. Add a resource above.</p>}
             </section>
           </>}
           {section === 'catalog' && <>
