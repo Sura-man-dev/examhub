@@ -17,6 +17,7 @@ import {
   Code2,
   Copy,
   FileText,
+  GraduationCap,
   Home,
   Layers3,
   LibraryBig,
@@ -43,11 +44,9 @@ import {
 import { courses, features } from './data/content'
 import { demoExamYears, demoExams, demoResources } from './data/demoContent'
 import { universities } from './data/universities'
+import { apiErrorMessage, apiUrl } from './api'
 import AdminPortal from './AdminPortal'
 import './App.css'
-
-const API_URL = (import.meta.env.VITE_API_URL || 'https://examhub-api.onrender.com').replace(/\/+$/, '')
-const apiUrl = (path) => `${API_URL}${path}`
 
 const navigation = [
   { label: 'Curriculum', href: '#curriculum' },
@@ -56,6 +55,12 @@ const navigation = [
   { label: 'Features', href: '#features' },
   { label: 'Pricing', href: '#pricing' },
   { label: 'FAQ', href: '#faq' },
+]
+
+const HERO_SLIDES = [
+  { image: '/hero-study-background.svg', label: 'A focused study space', detail: 'Find your rhythm with a calm, organized study setup.' },
+  { image: '/hero-library-background.svg', label: 'Your learning library', detail: 'Keep notes, reading, and practice together in one place.' },
+  { image: '/hero-campus-background.svg', label: 'Made for your next step', detail: 'Build steady progress with tools designed around your goals.' },
 ]
 
 const studyMaterials = [
@@ -195,7 +200,7 @@ function AuthPage({ mode, dark, onToggleTheme }) {
       if (!response.ok) throw new Error(result.error || 'Could not access your student account right now.')
       window.location.hash = 'app'
     } catch (requestError) {
-      setError(requestError.message || 'Could not access your student account right now.')
+      setError(apiErrorMessage(requestError, 'Could not access your student account right now.'))
     } finally {
       setBusy(false)
     }
@@ -208,7 +213,7 @@ function AuthPage({ mode, dark, onToggleTheme }) {
       const result = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(result.error || 'Demo student access is unavailable.')
       window.location.hash = 'app'
-    } catch (requestError) { setError(requestError.message || 'Demo student access is unavailable.') }
+    } catch (requestError) { setError(apiErrorMessage(requestError, 'Demo student access is unavailable.')) }
     finally { setBusy(false) }
   }
 
@@ -262,11 +267,14 @@ function AuthPage({ mode, dark, onToggleTheme }) {
 }
 
 function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, student }) {
+  const requestedPath = new URLSearchParams(window.location.search)
+  const requestedUniversity = requestedPath.get('university') || ''
+  const requestedYear = requestedPath.get('year') || ''
   const [tab, setTab] = useState(() => new URLSearchParams(window.location.search).get('payment') === 'chapa' ? 'profile' : 'home')
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const profileMenuRef = useRef(null)
-  const [university, setUniversity] = useState('')
-  const [year, setYear] = useState('')
+  const [university, setUniversity] = useState(() => universities.includes(requestedUniversity) ? requestedUniversity : '')
+  const [year, setYear] = useState(() => demoExamYears.includes(requestedYear) ? requestedYear : '')
   const [course, setCourse] = useState('')
   const [catalog, setCatalog] = useState([])
   const [paymentConfig, setPaymentConfig] = useState({ amount: 200, currency: 'ETB', environment: 'test', configured: false })
@@ -470,11 +478,22 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
           {tab === 'home' && <div className="student-home-grid">
             <div className="student-home-main">
               <section className="student-welcome"><span className="student-overline">YOUR LEARNING, IN ONE PLACE</span><h1>Ready to make progress?</h1><p>Choose your university, exam year, and course to open free sample materials.</p></section>
-              <div className="student-selection-row">
-                <UniversityDropdown choices={universityChoices} value={university} onChange={chooseUniversity} />
-                {university && <label className="course-picker study-step-reveal"><span><i>2</i> EXAM YEAR</span><select value={year} onChange={(event) => chooseYear(event.target.value)}><option value="">Select an exam year</option>{demoExamYears.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>}
-                {university && year && <label className="course-picker study-step-reveal"><span><i>3</i> COURSE</span><select value={course} onChange={(event) => chooseCourse(event.target.value)}><option value="">Select a course</option>{yearCourses.map((item) => <option key={item.id || item.title} value={item.title}>{item.title}</option>)}</select></label>}
-              </div>
+              <section className="study-path-panel" aria-label="Choose your study path">
+                <div className="study-path-panel-heading"><span><Sparkles size={15} /> PERSONALIZED STUDY PATH</span><p>Choose your campus and exam year to find the right course materials.</p></div>
+                <div className="study-path-steps" aria-label="Study path progress">
+                  {[
+                    { label: 'University', complete: Boolean(selectedUniversity) },
+                    { label: 'Exam year', complete: Boolean(year) },
+                    { label: 'Course', complete: Boolean(selectedCourse) },
+                  ].map((step, index) => <div className={`study-path-step${step.complete ? ' complete' : ''}${!step.complete && (index === 0 || (index === 1 && selectedUniversity) || (index === 2 && year)) ? ' current' : ''}`} key={step.label}><span>{step.complete ? <Check size={12} /> : `0${index + 1}`}</span><b>{step.label}</b></div>)}
+                </div>
+                <div className="student-selection-row">
+                  <UniversityDropdown choices={universityChoices} value={university} onChange={chooseUniversity} />
+                  {university && <label className="course-picker study-step-reveal"><span><i>2</i> EXAM YEAR</span><select value={year} onChange={(event) => chooseYear(event.target.value)}><option value="">Select an exam year</option>{demoExamYears.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>}
+                  {university && year && <label className="course-picker study-step-reveal"><span><i>3</i> COURSE</span><select value={course} onChange={(event) => chooseCourse(event.target.value)} disabled={!yearCourses.length}><option value="">{yearCourses.length ? 'Select a course' : 'No courses for this year yet'}</option>{yearCourses.map((item) => <option key={item.id || item.title} value={item.title}>{item.title}</option>)}</select></label>}
+                </div>
+                {university && year && !yearCourses.length && <p className="study-path-empty">There are no published or sample courses for this year yet. Try another exam year or ask Sura AI for general study help.</p>}
+              </section>
               {selectedUniversity && <div className="selected-university-summary"><UniversityMark name={selectedUniversityName} /><span><small>YOUR UNIVERSITY</small><b>{selectedUniversityName}</b></span><span className="sample-access-badge"><Check size={13} /> Free samples</span></div>}
               {selectedCourse && <section className="student-course-card">
                 <span className="student-card-icon"><selectedCourse.icon size={19} /></span><span className="student-card-kicker">SELECTED COURSE · {year}</span><h2>{selectedCourse.title}</h2><p>{selectedUniversityName} · sample study materials</p>
@@ -501,7 +520,7 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
               <section className="student-page-heading"><span className="student-overline">FREE COURSE SAMPLES</span><h1>Notes & books</h1><p>Read these demonstration resources at no cost. Samples are illustrative and are not official university materials.</p></section>
               <div className="student-library-filter"><span>University</span><b>{selectedUniversityName}</b></div><div className="student-library-filter"><span>Exam year</span><b>{year}</b></div><div className="student-library-filter"><span>Course</span><b>{selectedCourse.title}</b></div>
               <div className="demo-resource-grid">
-                {uploadedMaterials.map((material) => <article className="demo-resource-card" key={material.id}><span className="demo-resource-icon"><FileText size={18} /></span><small>COURSE PDF · {material.type.replace('_', ' ')}</small><h2>{material.title}</h2><p>{material.fileName || 'Published course material'}</p><a className="student-card-link" href={apiUrl(`/api/materials/${material.id}/file`)} target="_blank" rel="noreferrer">Read PDF <ArrowRight size={14} /></a></article>)}
+                {uploadedMaterials.map((material) => { const isPresentation = /\.pptx$/i.test(material.fileName || ''); return <article className="demo-resource-card" key={material.id}><span className="demo-resource-icon"><FileText size={18} /></span><small>COURSE MATERIAL · {isPresentation ? 'POWERPOINT' : 'PDF'} · {material.type.replace('_', ' ')}</small><h2>{material.title}</h2><p>{material.fileName || 'Published course material'}</p><a className="student-card-link" href={apiUrl(`/api/materials/${material.id}/file`)} target="_blank" rel="noreferrer">{isPresentation ? 'Download PowerPoint' : 'Read PDF'} <ArrowRight size={14} /></a></article> })}
                 {Object.entries(demoResources[selectedCourse.title] || {}).map(([kind, resource]) => <article className="demo-resource-card" key={kind}><span className="demo-resource-icon">{kind === 'note' ? <FileText size={18} /> : <BookOpen size={18} />}</span><small>FREE SAMPLE {kind.toUpperCase()}</small><h2>{resource.title}</h2><p>{resource.content.slice(0, 150)}…</p><button type="button" onClick={() => setReadingResource({ ...resource, kind })}>Read sample <ArrowRight size={14} /></button></article>)}
               </div>
             </> : <section className="selection-empty-state"><b>Choose your study path first</b><p>Select a university, exam year, and course to see free reading samples.</p><button type="button" onClick={() => setTab('home')}>Choose university and course <ArrowRight size={14} /></button></section>}
@@ -559,8 +578,8 @@ function StudentExperience({ dark, onToggleTheme, onSignOut, onStudentUpdate, st
           {[['home', Home, 'Home'], ['explore', Search, 'Explore'], ['library', BookOpen, 'Library'], ['profile', UserRound, 'Profile']].map(([id, Icon, label]) => <button type="button" key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)} title={label}><Icon size={18} /><span>{label}</span></button>)}
         </nav>
       </section>
-      <button className="ai-floating-launcher" type="button" onClick={() => setAiOpen(true)} aria-label="Open AI study tutor" title="Ask Sura AI"><Sparkles size={22} /><span>Ask Sura AI</span></button>
-      {aiOpen && <AiChatModal mode="student" demoMode={!student?.activeSubscription} dark={dark} university={selectedUniversityName} course={selectedCourse?.title || ''} onClose={() => setAiOpen(false)} />}
+      <button className="ai-floating-launcher" type="button" onClick={() => setAiOpen(true)} aria-label={hasStudySelection ? 'Open AI study tutor' : 'Ask Sura AI a general study question'} title={hasStudySelection ? 'Ask Sura AI about your course' : 'Ask Sura AI before choosing a course'}><Sparkles size={22} /><span>Ask Sura AI</span></button>
+      {aiOpen && <AiChatModal mode={hasStudySelection ? 'student' : 'public'} demoMode={!student?.activeSubscription} dark={dark} university={selectedUniversityName} course={selectedCourse?.title || ''} onClose={() => setAiOpen(false)} />}
     </main>
   )
 }
@@ -688,7 +707,7 @@ function AiChatModal({ mode = 'public', demoMode = false, dark = false, universi
   }
   const suggestions = studentTutor
     ? demoMode ? (demoSuggestions[course] || ['Explain a key idea from my course', 'Help me understand a course topic']) : ['Explain a key idea from my course', 'Help me understand a difficult topic', 'Give me a short revision summary']
-    : ['What can I study with Sura Study?', 'How does monthly access work?', 'Can I use Sura Study on my phone?']
+    : ['Explain a difficult subject simply', 'Help me plan a study session', 'What can I study with Sura Study?']
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -724,7 +743,9 @@ function AiChatModal({ mode = 'public', demoMode = false, dark = false, universi
       if (result.sessionId) setSessionId(result.sessionId)
       setMessages((current) => [...current, { role: 'assistant', content: result.answer, sources: result.sources || [] }])
     } catch (requestError) {
-      setError(requestError.message || 'Unable to reach Sura AI. Please try again.')
+      setMessages((current) => current.slice(0, -1))
+      setDraft(question)
+      setError(apiErrorMessage(requestError, 'Unable to reach Sura AI. Please try again.'))
     } finally {
       setBusy(false)
       inputRef.current?.focus()
@@ -740,20 +761,20 @@ function AiChatModal({ mode = 'public', demoMode = false, dark = false, universi
         </header>
         <div className="ai-modal-context">
           <span className="ai-context-dot" />
-          {studentTutor ? <span><b>{course}</b><small>{university} · {demoMode ? 'Demo tutor · sample materials' : 'Published course sources'}</small></span> : <span><b>Ask about Sura Study</b><small>Platform guide · Course answers require student access</small></span>}
+          {studentTutor ? <span><b>{course}</b><small>{university} · {demoMode ? 'Demo tutor · sample materials' : 'Published course sources'}</small></span> : <span><b>Study help, before you choose</b><small>General learning support · Course materials are available after selection</small></span>}
           {studentTutor && <ShieldCheck className="ai-context-shield" size={17} />}
         </div>
         <div className="ai-modal-thread" aria-live="polite">
-          {!messages.length && <div className="ai-modal-welcome"><span className="ai-welcome-spark"><Sparkles size={20} /></span><h2>{studentTutor ? 'What are you learning today?' : 'How can I guide you?'}</h2><p>{studentTutor ? demoMode ? 'Try the sample course tutor. It answers from the demo notes shown in your library.' : 'Ask for help with this course. I’ll ground my answer in the published study materials available to you.' : 'Ask about Sura Study, our learning tools, or how to get started.'}</p><div className="ai-modal-suggestions">{suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => setDraft(suggestion)}>{suggestion}<ArrowUpRight size={14} /></button>)}</div></div>}
+          {!messages.length && <div className="ai-modal-welcome"><span className="ai-welcome-spark"><Sparkles size={20} /></span><h2>{studentTutor ? 'What are you learning today?' : 'How can I help you learn?'}</h2><p>{studentTutor ? demoMode ? 'Try the sample course tutor. It answers from the demo notes shown in your library.' : 'Ask for help with this course. I’ll ground my answer in the published study materials available to you.' : 'Ask a general study question or learn how Sura Study works. Choose a university and course any time for course-specific support.'}</p><div className="ai-modal-suggestions">{suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => setDraft(suggestion)}>{suggestion}<ArrowUpRight size={14} /></button>)}</div></div>}
           {messages.map((message, index) => <article className={`ai-modal-message ${message.role}`} key={`${message.role}-${index}`}><span className="ai-modal-message-avatar">{message.role === 'assistant' ? <Sparkles size={14} /> : 'S'}</span><div className="ai-modal-bubble"><p>{message.content}</p>{message.sources?.length > 0 && <div className="ai-modal-sources"><b>{message.sources.some((source) => source.sample) ? 'Sample course materials' : 'From your course'}</b>{message.sources.map((source) => <span key={source.id}>{source.title}{source.pageNumber ? ` · page ${source.pageNumber}` : ''}</span>)}</div>}</div></article>)}
           {busy && <div className="ai-modal-thinking"><span /><span /><span /> {studentTutor ? 'Reviewing your course materials' : 'Sura AI is thinking'}…</div>}
           {error && <p className="ai-modal-error" role="alert">{error}</p>}
           <div ref={bottomRef} />
         </div>
         <form className="ai-modal-composer" onSubmit={submitQuestion}>
-          <textarea ref={inputRef} rows={1} maxLength={1200} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={studentTutor ? 'Ask about your course…' : 'Ask a question about Sura Study…'} aria-label="Your question for Sura AI" />
+          <textarea ref={inputRef} rows={1} maxLength={1200} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={studentTutor ? 'Ask about your course…' : 'Ask about a subject or Sura Study…'} aria-label="Your question for Sura AI" />
           <button type="submit" disabled={!draft.trim() || busy} aria-label="Send question"><Send size={17} /></button>
-          <small>{studentTutor ? 'Answers are based on published course materials.' : 'Sura AI answers questions about the Sura Study platform.'}</small>
+          <small>{studentTutor ? 'Answers are based on published course materials.' : 'General study help · Select a course for answers from its materials.'}</small>
         </form>
       </section>
     </div>
@@ -844,9 +865,25 @@ function DashboardPreview() {
 }
 
 function HeroSection() {
+  const [activeSlide, setActiveSlide] = useState(0)
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined
+    const timer = window.setInterval(() => {
+      setActiveSlide((current) => (current + 1) % HERO_SLIDES.length)
+    }, 6500)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  function showSlide(index) {
+    setActiveSlide((index + HERO_SLIDES.length) % HERO_SLIDES.length)
+  }
+
   return (
-    <section className="hero-section" id="home">
-      <div className="hero-photo-collage" aria-hidden="true"><div className="hero-photo hero-photo-one" /><div className="hero-photo hero-photo-two" /><div className="hero-photo hero-photo-three" /></div>
+    <section className="hero-section" id="home" aria-label="Sura Study introduction">
+      <div className="hero-illustration" aria-hidden="true">
+        {HERO_SLIDES.map((slide, index) => <img className={`hero-slide-image${index === activeSlide ? ' active' : ''}`} key={slide.image} src={slide.image} alt="" />)}
+      </div>
       <div className="container hero-grid">
         <div className="hero-copy">
           <div className="hero-kicker"><span className="kicker-mark"><Sparkles size={13} /></span> A better way to prepare</div>
@@ -857,8 +894,17 @@ function HeroSection() {
             <a className="button button-outline" href="#curriculum"><span className="play-icon"><Play size={13} fill="currentColor" /></span> Explore freshman courses</a>
           </div>
           <div className="hero-trust"><span className="trust-check"><Check size={13} /></span> Built for university students. Designed for focused learning.</div>
+          <div className="hero-slide-caption" aria-live="polite">
+            <span>{String(activeSlide + 1).padStart(2, '0')} / {String(HERO_SLIDES.length).padStart(2, '0')}</span>
+            <span><b>{HERO_SLIDES[activeSlide].label}</b><small>{HERO_SLIDES[activeSlide].detail}</small></span>
+          </div>
         </div>
         <DashboardPreview />
+      </div>
+      <div className="hero-slide-controls" role="group" aria-label="Landing page background slides">
+        <button type="button" aria-label="Previous background image" onClick={() => showSlide(activeSlide - 1)}><ArrowLeft size={15} /></button>
+        {HERO_SLIDES.map((slide, index) => <button type="button" key={slide.image} className={index === activeSlide ? 'active' : ''} aria-label={`Show background image ${index + 1}: ${slide.label}`} aria-pressed={index === activeSlide} onClick={() => showSlide(index)} />)}
+        <button type="button" aria-label="Next background image" onClick={() => showSlide(activeSlide + 1)}><ArrowRight size={15} /></button>
       </div>
       <div className="hero-bottom container">
         <span>YOUR FIRST-YEAR ADVANTAGE</span>
@@ -1292,6 +1338,9 @@ function CurriculumExplorerSection() {
   const [catalogCourses, setCatalogCourses] = useState([])
   const [search, setSearch] = useState('')
   const [selectedTrack, setSelectedTrack] = useState('ALL')
+  const [university, setUniversity] = useState('')
+  const [examYear, setExamYear] = useState('')
+  const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
     fetch(apiUrl('/api/catalog'))
@@ -1299,7 +1348,7 @@ function CurriculumExplorerSection() {
       .then((data) => {
         if (data?.universities?.length) {
           const map = new Map()
-          defaultCurriculumCourses.forEach((c) => map.set(c.title.toLowerCase(), c))
+          defaultCurriculumCourses.forEach((course) => map.set(course.title.toLowerCase(), { ...course, universities: [] }))
           data.universities.forEach((u) => {
             u.courses?.forEach((c) => {
               const key = c.title.toLowerCase()
@@ -1311,9 +1360,10 @@ function CurriculumExplorerSection() {
                   description: 'Accredited university course material including lecture notes, exam sets, and review questions.',
                   icon: BookOpenCheck,
                   tone: 'course-blue',
-                  tags: ['University Aligned', 'Question Bank', 'Active Course']
+                  tags: ['University Aligned', 'Question Bank', 'Active Course'],
+                  universities: [u.name],
                 })
-              }
+              } else map.get(key).universities.push(u.name)
             })
           })
           setCatalogCourses(Array.from(map.values()))
@@ -1328,40 +1378,51 @@ function CurriculumExplorerSection() {
 
   const filtered = displayList.filter((item) => {
     const matchesTrack = selectedTrack === 'ALL' || item.track === selectedTrack
+    const matchesUniversity = !university || !item.universities?.length || item.universities.includes(university)
     const matchesSearch = !search.trim() ||
       item.title.toLowerCase().includes(search.toLowerCase()) ||
       item.category.toLowerCase().includes(search.toLowerCase()) ||
       item.description.toLowerCase().includes(search.toLowerCase())
-    return matchesTrack && matchesSearch
+    return matchesTrack && matchesUniversity && matchesSearch
   })
+
+  const visibleCourses = search.trim() ? (showAll ? filtered : filtered.slice(0, 4)) : []
 
   return (
     <section className="section curriculum-section" id="curriculum">
       <div className="container">
         <div className="curriculum-heading-row">
           <SectionHeading
-            eyebrow="YOUR FIRST-YEAR ACADEMIC HUB"
-            title={<>Everything you need<br />for a confident start.</>}
-            text="Explore freshman subjects, find the right study path, and keep notes, practice questions, and revision resources together from your first week."
+            eyebrow="A STUDY PATH THAT FITS YOU"
+            title={<>Start with your campus.<br />Find your next course.</>}
+            text="A growing catalog is easier to explore when it starts with your university, year, and a quick course search."
           />
           <div className="curriculum-badge-note">
             <Sparkles size={16} />
-            <span>Built for Ethiopian university freshmen</span>
+            <span>{catalogCourses.length || defaultCurriculumCourses.length} course titles to explore</span>
           </div>
         </div>
 
-        {/* Filter and Search Bar */}
+        <div className="curriculum-path-card">
+          <div className="curriculum-path-heading"><span><GraduationCap size={17} /> YOUR STUDY PATH</span><small>Set your campus and exam year. Search for course titles only when you need them.</small></div>
+          <div className="curriculum-path-fields">
+            <label><span>UNIVERSITY</span><select value={university} onChange={(event) => setUniversity(event.target.value)}><option value="">Choose a university</option>{universities.map((name) => <option value={name} key={name}>{name}</option>)}</select></label>
+            <label><span>EXAM YEAR</span><select value={examYear} onChange={(event) => setExamYear(event.target.value)}><option value="">Choose a year</option>{demoExamYears.map((year) => <option value={year} key={year}>{year}</option>)}</select></label>
+            <div className="curriculum-path-status"><span>{university && examYear ? <CheckCircle2 size={17} /> : <Sparkles size={17} />}</span><div><b>{university && examYear ? 'Study path selected' : 'Your path, at your pace'}</b><small>{university && examYear ? `${university} · ${examYear}` : 'Your choices help you find relevant study resources.'}</small></div></div>
+          </div>
+        </div>
+
         <div className="curriculum-controls">
           <div className="curriculum-search">
             <Search size={16} />
             <input
               type="search"
-              placeholder="Search freshman courses and topics..."
+              placeholder="Search a course when you’re ready..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => { setSearch(event.target.value); setShowAll(false) }}
               aria-label="Search curriculum"
             />
-            {search && <button type="button" onClick={() => setSearch('')}><X size={14} /></button>}
+            {search && <button type="button" onClick={() => { setSearch(''); setShowAll(false) }} aria-label="Clear course search"><X size={14} /></button>}
           </div>
 
           <div className="track-filter-chips">
@@ -1378,9 +1439,10 @@ function CurriculumExplorerSection() {
           </div>
         </div>
 
-        {/* Dynamic Course Grid */}
-        <div className="curriculum-grid">
-          {filtered.map((c) => {
+        {search.trim() && <div className="curriculum-results-heading"><span>{filtered.length} {filtered.length === 1 ? 'course' : 'courses'} match “{search.trim()}”</span>{university && <small>Course catalog · {university}{examYear ? ` · ${examYear} study path` : ''}</small>}</div>}
+        {!search.trim() && <div className="curriculum-discovery-note"><span className="curriculum-discovery-icon"><LibraryBig size={18} /></span><span><b>Your catalog is ready when you are.</b><small>Search for one subject to see a short list of relevant courses instead of scrolling through everything.</small></span><ArrowRight size={17} /></div>}
+        {search.trim() && filtered.length > 0 && <div className="curriculum-grid">
+          {visibleCourses.map((c) => {
             const Icon = c.icon || BookOpen
             return (
               <article className="curriculum-card" key={c.title}>
@@ -1398,14 +1460,16 @@ function CurriculumExplorerSection() {
                   ))}
                 </div>
                 <div className="curriculum-card-foot">
-                  <a className="card-explore-link" href="#register">
-                    Open in Workspace <ArrowRight size={14} />
+                  <a className="card-explore-link" href={`?university=${encodeURIComponent(university)}&year=${encodeURIComponent(examYear)}#register`}>
+                    Continue to workspace <ArrowRight size={14} />
                   </a>
                 </div>
               </article>
             )
           })}
-        </div>
+        </div>}
+        {search.trim() && filtered.length === 0 && <p className="curriculum-no-results">No courses match that search. Try another subject or select a different category.</p>}
+        {filtered.length > 4 && search.trim() && <button className="curriculum-show-more" type="button" onClick={() => setShowAll((current) => !current)}>{showAll ? 'Show fewer courses' : `Show all ${filtered.length} matches`} <ChevronDown size={15} /></button>}
       </div>
     </section>
   )
